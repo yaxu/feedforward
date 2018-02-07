@@ -9,26 +9,46 @@ type Pos = (Int, Int)
 data State = State {codeState :: Code,
                     posState :: Pos,
                     xWarp :: Int,
-                    windowState :: Window
+                    windowState :: Window,
+                    fgState :: ColorID,
+                    bgState :: ColorID,
+                    hiliteState :: [Int]
                    }
 
-goCursor state = moveCursor (fromIntegral $ fst $ posState state) (fromIntegral $ snd $ posState state)
+offsetY = 2
+offsetX = 1
+
+goCursor state = moveCursor (offsetY + (fromIntegral $ fst $ posState state)) (offsetX + (fromIntegral $ snd $ posState state))
 
 draw :: MVar State -> Curses ()
-draw mvS = do s <- (liftIO $ readMVar mvS)
-              updateWindow (windowState s) $ do
-                mapM_ drawLine $ zip (codeState s) [0 ..]
-                goCursor s
-              return ()
-  where drawLine (line, n) = do moveCursor n 0
-                                drawString line
+draw mvS
+  = do s <- (liftIO $ readMVar mvS)
+       updateWindow (windowState s) $ do
+         (h,w) <- windowSize
+         setColor (bgState s)
+         moveCursor 0 0
+         let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
+         drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
+         mapM_ (drawLine s) $ zip (codeState s) [0 ..]
+         goCursor s
+         return ()
+  where drawLine s (line, n) =
+          do moveCursor (n + offsetY) offsetX
+             if elem (fromIntegral n) (hiliteState s)
+               then setColor (bgState s)
+               else setColor (fgState s)
+             drawString line
 
-initState :: Window -> State
-initState w = State {codeState = ["every 3 rev $ sound \"bd sn\"", "  where foo = 1", "", "hello world"],
-                     posState = (0,0),
-                     windowState = w,
-                     xWarp = 0
-                    }
+initState :: Window -> ColorID -> ColorID -> State
+initState w fg bg
+  = State {codeState = ["every 3 rev $ sound \"bd sn\"", "  where foo = 1"],
+           posState = (0,0),
+           windowState = w,
+           xWarp = 0,
+           fgState = fg,
+           bgState = bg,
+           hiliteState = []
+          }
 
 moveHome :: MVar State -> Curses ()
 moveHome mvS = do s <- liftIO (readMVar mvS)
@@ -52,7 +72,8 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                              | otherwise = xWarp s
                           x'' = min xw maxX
                       liftIO $ putMVar mvS $ s {posState = (y',x''),
-                                                xWarp = xw
+                                                xWarp = xw,
+                                                hiliteState = []
                                                }
 
 main :: IO ()
@@ -60,7 +81,9 @@ main = do runCurses $ do
             setEcho False
             w <- defaultWindow
             updateWindow w clear
-            mvS <- (liftIO $ newMVar $ initState w)
+            fg <- newColorID ColorWhite ColorBlack 1
+            bg <- newColorID ColorBlack ColorWhite 2
+            mvS <- (liftIO $ newMVar $ initState w fg bg)
             draw mvS
             render
             mainLoop mvS
@@ -99,6 +122,8 @@ keyCtrl mvS 'd' = delete mvS
 keyCtrl mvS 'k' = killLine mvS
 
 keyCtrl mvS 'j' = insertBreak mvS
+
+keyCtrl mvS 'x' = eval mvS
 
 keyCtrl mvS _ = return ()
 
@@ -237,6 +262,22 @@ killLine mvS =
             | otherwise = joinLinesBack s
      liftIO $ putMVar mvS s'
      updateWindow (windowState s) clear
+
+eval :: MVar State -> Curses ()
+eval mvS = 
+  do s <- (liftIO $ takeMVar mvS)
+     let (y,_) = posState s
+         ls = codeState s
+         block | hasChar (ls !! y) = findBlock
+               | otherwise = []
+         findChars = takeWhile (hasChar . (ls !!))
+         pre = reverse $ findChars $ reverse [0 .. y]
+         post | y == ((length ls) - 1) = []
+              | otherwise = findChars [y+1 .. ((length ls) - 1)]
+         findBlock = pre ++ post
+         hasChar = or . map (/= ' ')
+     liftIO $ putMVar mvS $ s {hiliteState = findBlock}
+     draw mvS
 
 
 waitFor :: Window -> (Event -> Bool) -> Curses ()
