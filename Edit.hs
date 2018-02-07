@@ -54,19 +54,6 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                       liftIO $ putMVar mvS $ s {posState = (y',x''),
                                                 xWarp = xw
                                                }
-                      updateWindow (windowState s) $ do
-                        moveCursor 10 10
-                        drawString $ show maxX ++ "x" ++ show maxY
-                        moveCursor 11 10
-                        drawString $ show x' ++ "x" ++ show y'
-                        moveCursor 12 10
-                        drawString $ show xd ++ "x" ++ show yd
-                        moveCursor 13 10
-                        drawString $ show x ++ "x" ++ show y
-                        moveCursor 14 10
-                        drawString $ show xw
-                      return ()
-                      
 
 main :: IO ()
 main = do runCurses $ do
@@ -94,40 +81,162 @@ mainLoop mvS = loop where
              Just (EventSpecialKey KeyRightArrow) -> move mvS (0,1) >> loop
              Just (EventSpecialKey KeyHome) -> moveHome mvS >> loop
              Just (EventSpecialKey KeyEnd) -> moveEnd mvS >> loop
+             Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> loop
+             Just (EventSpecialKey KeyDeleteCharacter) -> delete mvS >> loop
+             Just (EventSpecialKey KeyBackspace) -> backspace mvS >> loop
              Just _ -> loop
       where esc = chr(27)
 
+-- emacs movement
 keyCtrl mvS 'a' = moveHome mvS
 keyCtrl mvS 'e' = moveEnd mvS
 keyCtrl mvS 'n' = move mvS (1,0)
 keyCtrl mvS 'p' = move mvS (-1,0)
 keyCtrl mvS 'b' = move mvS (0,-1)
 keyCtrl mvS 'f' = move mvS (0,1)
+
+keyCtrl mvS 'd' = delete mvS
+keyCtrl mvS 'k' = killLine mvS
+
+keyCtrl mvS 'j' = insertBreak mvS
+
 keyCtrl mvS _ = return ()
+
+{-
+keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
+                   updateWindow (windowState s) $ do
+                     moveCursor 18 10
+                     drawString $ show c
+-}
 
 keypress mvS c | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
                | otherwise = insertChar mvS c
   where isCtrl = ord(c) >= 1 && ord(c) <= 26
 
-insertChar mvS c = do s <- (liftIO $ takeMVar mvS)
-                      let ls = codeState s
-                          (y,x) = posState s
-                          preL = take y ls
-                          l = head $ drop y ls
-                          postL = drop (y+1) ls
-                          preX = take x l
-                          postX = drop x l
-                          l' = preX ++ (c:postX)
-                          ls' = preL ++ (l':postL)
-                          s' = s {codeState = ls',
-                                  posState = (y,x+1)
-                                 }
-                      liftIO $ putMVar mvS s'
-                      updateWindow (windowState s) $ do
-                        moveCursor 16 10
-                        drawString $ c:[]
-                        moveCursor 17 10
-                        drawString $ show $ ord c
+cursorContext s =
+  (ls, (y,x), preL, l, postL, preX, postX)
+  where  ls = codeState s
+         (y,x) = posState s
+         preL = take y ls
+         l = head $ drop y ls
+         postL = drop (y+1) ls
+         preX = take x l
+         postX = drop x l
+     
+
+insertBreak :: MVar State -> Curses ()
+insertBreak mvS =
+  do s <- (liftIO $ takeMVar mvS)
+     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+         ls' = preL ++ (preX:postX:postL)
+         (y',x') = (y+1,0)
+     liftIO $ putMVar mvS $ s {codeState = ls',
+                               posState = (y',x'),
+                               xWarp = 0
+                              }
+     updateWindow (windowState s) clear
+
+insertChar :: MVar State -> Char -> Curses ()
+insertChar mvS c =
+  do s <- (liftIO $ takeMVar mvS)
+     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+         (y',x') = (y,x+1)
+         l' = preX ++ (c:postX)
+         ls' = preL ++ (l':postL)
+     liftIO $ putMVar mvS $ s {codeState = ls',
+                               posState = (y',x'),
+                               xWarp = x'
+                              }
+     updateWindow (windowState s) clear
+
+backspaceChar :: State -> State
+backspaceChar s =
+  s {codeState = ls',
+     posState = (y',x'),
+     xWarp = x'
+    }
+  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+        (y',x') = (y,max 0 (x-1))
+        l' | x == 0 = postX
+           | otherwise = (take ((length preX) - 1) preX) ++ postX
+        ls' = preL ++ (l':postL)
+
+joinLines :: State -> State
+joinLines s =
+  s {codeState = ls',
+     posState = (y',x'),
+     xWarp = x'
+    }
+  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+        l' = (last preL) ++ l
+        ls' = (take ((length preL) - 1) preL) ++ (l':postL)
+        (y',x') = (y-1,length $ last preL)
+        xWarp = x'
+
+backspace :: MVar State -> Curses ()
+backspace mvS =
+  do s <- (liftIO $ takeMVar mvS)
+     let (y,x) = posState s
+         s' | x > 0 = backspaceChar s
+            | y == 0 = s
+            | otherwise = joinLines s
+     liftIO $ putMVar mvS s'
+     updateWindow (windowState s) clear
+
+joinLinesBack :: State -> State
+joinLinesBack s =
+  s {codeState = ls',
+     posState = (y',x'),
+     xWarp = x'
+    }
+  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+        l' = l ++ head postL
+        ls' = preL ++ (l':(tail postL))
+        (y',x') = (y,x)
+        xWarp = x'
+
+deleteChar :: State -> State
+deleteChar s =
+  s {codeState = ls',
+     posState = (y',x'),
+     xWarp = x'
+    }
+  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+        (y',x') = (y,x)
+        l' | x == ((length l)) = preX
+           | otherwise = preX ++ (tail postX)
+        ls' = preL ++ (l':postL)
+
+deleteToEnd :: State -> State
+deleteToEnd s =
+  s {codeState = ls',
+     posState = (y',x'),
+     xWarp = x'
+    }
+  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+        (y',x') = (y,x)
+        l' = preX
+        ls' = preL ++ (l':postL)
+
+delete :: MVar State -> Curses ()
+delete mvS =
+  do s <- (liftIO $ takeMVar mvS)
+     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+         s' | x < (length l) = deleteChar s
+            | y == ((length ls) - 1) = s
+            | otherwise = joinLinesBack s
+     liftIO $ putMVar mvS s'
+     updateWindow (windowState s) clear
+
+killLine :: MVar State -> Curses ()
+killLine mvS =
+  do s <- (liftIO $ takeMVar mvS)
+     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+         s' | x < (length l) = deleteToEnd s
+            | y == ((length ls) - 1) = s
+            | otherwise = joinLinesBack s
+     liftIO $ putMVar mvS s'
+     updateWindow (windowState s) clear
 
 
 waitFor :: Window -> (Event -> Bool) -> Curses ()
