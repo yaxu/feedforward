@@ -1,7 +1,18 @@
+{- Feedforward (c) Alex McLean 2018
+   Text editor for TidalCycles
+   https://github.com/yaxu/feedforward
+   Distributed under the terms of the GNU Public License 3.0, see LICENSE
+-}
+
 import UI.NCurses
 import Control.Concurrent.MVar
 import Control.Monad.IO.Class
 import Data.Char
+import TidalHint
+import Control.Concurrent (forkIO)
+import Sound.Tidal.Context (superDirtSetters, ParamPattern, cpsUtils)
+import Data.List (intercalate)
+import Data.Time.Clock.POSIX
 
 type Code = [String]
 type Pos = (Int, Int)
@@ -12,11 +23,67 @@ data State = State {codeState :: Code,
                     windowState :: Window,
                     fgState :: ColorID,
                     bgState :: ColorID,
-                    hiliteState :: [Int]
+                    hiliteState :: [Int],
+                    hintIn :: MVar String,
+                    hintOut :: MVar Response,
+                    dirtState :: ParamPattern -> IO (),
+                    changeSetState :: ChangeSet,
+                    now :: Double
                    }
+
 
 offsetY = 2
 offsetX = 1
+
+{- Fires every time the content of the editor is changed. The changeObj
+is a {from, to, text, removed, origin} object containing information
+about the changes that occurred as second argument. from and to are
+the positions (in the pre-change coordinate system) where the change
+started and ended (for example, it might be {ch:0, line:18} if the
+position is at the beginning of line #19). text is an array of strings
+representing the text that replaced the changed range (split by
+line). removed is the text that used to be between from and to, which
+is overwritten by this change. This event is fired before the end of
+an operation, before the DOM updates happen.
+-}
+
+data Change = Change {cFrom :: Pos,
+                      cTo :: Pos,
+                      cText :: String,
+                      cRemoved :: [String],
+                      cOrigin :: String,
+                      cWhen :: Double
+                     }
+
+addChange :: Double -> Change -> State -> State
+addChange now change s =
+  s {changeSetState = changeSet {csChanges = change':changes}}
+  where changeSet = changeSetState s
+        changes = csChanges changeSet
+        change' = change {cWhen = now}
+        
+
+insertChange :: Pos -> String -> Change
+insertChange from str = Change {cFrom = from,
+                                cTo = from,
+                                cText = str,
+                                cRemoved = [""],
+                                cOrigin = "+input",
+                                cWhen = -1
+                               }
+
+deleteChange :: Pos -> Pos -> [String] -> Change
+deleteChange from to removed = Change {cFrom = from,
+                                       cTo = to,
+                                       cText = "",
+                                       cRemoved = removed,
+                                       cOrigin = "+input",
+                                       cWhen = -1
+                                      }
+
+data ChangeSet = ChangeSet {csStart :: Double,
+                            csChanges :: [Change]
+                           }
 
 goCursor state = moveCursor (offsetY + (fromIntegral $ fst $ posState state)) (offsetX + (fromIntegral $ snd $ posState state))
 
@@ -39,15 +106,20 @@ draw mvS
                else setColor (fgState s)
              drawString line
 
-initState :: Window -> ColorID -> ColorID -> State
-initState w fg bg
+initState :: Window -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Double -> State
+initState w fg bg mIn mOut d now
   = State {codeState = ["every 3 rev $ sound \"bd sn\"", "  where foo = 1"],
            posState = (0,0),
            windowState = w,
            xWarp = 0,
            fgState = fg,
            bgState = bg,
-           hiliteState = []
+           hiliteState = [],
+           hintIn = mIn,
+           hintOut = mOut,
+           dirtState = d,
+           changeSetState = ChangeSet {csStart = now, csChanges = []},
+           now = -1
           }
 
 moveHome :: MVar State -> Curses ()
@@ -83,7 +155,13 @@ main = do runCurses $ do
             updateWindow w clear
             fg <- newColorID ColorWhite ColorBlack 1
             bg <- newColorID ColorBlack ColorWhite 2
-            mvS <- (liftIO $ newMVar $ initState w fg bg)
+            mIn <- liftIO newEmptyMVar
+            mOut <- liftIO newEmptyMVar
+            liftIO $ forkIO $ hintJob (mIn, mOut)
+            (_, getNow) <- liftIO cpsUtils
+            (d, _) <- liftIO (superDirtSetters getNow)
+            now <- (liftIO $ realToFrac <$> getPOSIXTime)
+            mvS <- (liftIO $ newMVar $ initState w fg bg mIn mOut d (now))
             draw mvS
             render
             mainLoop mvS
@@ -105,7 +183,7 @@ mainLoop mvS = loop where
              Just (EventSpecialKey KeyHome) -> moveHome mvS >> loop
              Just (EventSpecialKey KeyEnd) -> moveEnd mvS >> loop
              Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> loop
-             Just (EventSpecialKey KeyDeleteCharacter) -> delete mvS >> loop
+             Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> loop
              Just (EventSpecialKey KeyBackspace) -> backspace mvS >> loop
              Just _ -> loop
       where esc = chr(27)
@@ -118,7 +196,7 @@ keyCtrl mvS 'p' = move mvS (-1,0)
 keyCtrl mvS 'b' = move mvS (0,-1)
 keyCtrl mvS 'f' = move mvS (0,1)
 
-keyCtrl mvS 'd' = delete mvS
+keyCtrl mvS 'd' = del mvS
 keyCtrl mvS 'k' = killLine mvS
 
 keyCtrl mvS 'j' = insertBreak mvS
@@ -168,10 +246,12 @@ insertChar mvS c =
          (y',x') = (y,x+1)
          l' = preX ++ (c:postX)
          ls' = preL ++ (l':postL)
-     liftIO $ putMVar mvS $ s {codeState = ls',
-                               posState = (y',x'),
-                               xWarp = x'
-                              }
+         change = insertChange (y,x) [c]
+     now <- (liftIO $ realToFrac <$> getPOSIXTime)
+     liftIO $ putMVar mvS $ addChange now change $ s {codeState = ls',
+                                                      posState = (y',x'),
+                                                      xWarp = x'
+                                                     }
      updateWindow (windowState s) clear
 
 backspaceChar :: State -> State
@@ -243,8 +323,8 @@ deleteToEnd s =
         l' = preX
         ls' = preL ++ (l':postL)
 
-delete :: MVar State -> Curses ()
-delete mvS =
+del :: MVar State -> Curses ()
+del mvS =
   do s <- (liftIO $ takeMVar mvS)
      let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
          s' | x < (length l) = deleteChar s
@@ -276,8 +356,19 @@ eval mvS =
               | otherwise = findChars [y+1 .. ((length ls) - 1)]
          findBlock = pre ++ post
          hasChar = or . map (/= ' ')
+         codeblock = intercalate "\n" (map (ls !!) findBlock)
+     liftIO $ putMVar (hintIn s) codeblock
+     response <- liftIO $ takeMVar (hintOut s)
+     act s response
      liftIO $ putMVar mvS $ s {hiliteState = findBlock}
      draw mvS
+  where
+    act s (HintOK p) = liftIO $ (dirtState s) p
+    act s (HintError err) =
+      do updateWindow (windowState s) $ do
+           moveCursor 15 0
+           drawString $ show err
+
 
 
 waitFor :: Window -> (Event -> Bool) -> Curses ()
