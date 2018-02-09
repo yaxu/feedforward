@@ -71,13 +71,27 @@ applyChange :: Change -> State -> State
 applyChange change s = s {sChangeSet = change:changes,
                           sCode = ls
                          }
-  where ls = []
+  where ls | (cOrigin change) == "+input" = applyInput s change
+           | (cOrigin change) == "+delete" = applyDelete s change
+           | otherwise = sCode s
         changes = sChangeSet s
-  
+
+applyInput :: State -> Change -> [String]
+applyInput s change = preL ++ added ++ postL
+  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext' s (cFrom change)
+        added = addToHead preX $ addToLast postX $ cText change
+        addToHead :: [a] -> [[a]] -> [[a]]
+        addToHead x xs = (x ++ (head xs)) : tail xs
+        addToLast x xs = init xs ++ [(last xs ++ x)]
+
+applyDelete :: State -> Change -> [String]
+applyDelete s change = preL ++ ((preX ++ postX):postL)
+  where (_, _, preL, _, _, preX, _) = cursorContext' s (cFrom change)
+        (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
 
 insertChange :: Pos -> [String] -> Change
 insertChange from str = Change {cFrom = from,
-                                cTo = from,
+ma                                cTo = from,
                                 cText = str,
                                 cRemoved = [""],
                                 cOrigin = "+input",
@@ -89,7 +103,7 @@ deleteChange from to removed = Change {cFrom = from,
                                        cTo = to,
                                        cText = [""],
                                        cRemoved = removed,
-                                       cOrigin = "+input",
+                                       cOrigin = "+delete",
                                        cWhen = -1
                                       }
 
@@ -224,10 +238,12 @@ keypress mvS c | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
                | otherwise = insertChar mvS c
   where isCtrl = ord(c) >= 1 && ord(c) <= 26
 
-cursorContext s =
+
+cursorContext s = cursorContext' s (sPos s)
+
+cursorContext' s (y,x) =
   (ls, (y,x), preL, l, postL, preX, postX)
   where  ls = sCode s
-         (y,x) = sPos s
          preL = take y ls
          l = head $ drop y ls
          postL = drop (y+1) ls
