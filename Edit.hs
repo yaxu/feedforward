@@ -50,7 +50,8 @@ data Change = Change {cFrom :: Pos,
                       cText :: [String],
                       cRemoved :: [String],
                       cOrigin :: String,
-                      cWhen :: Double
+                      cWhen :: Double,
+                      cCursor :: Pos
                      }
             deriving Show
 
@@ -58,18 +59,12 @@ type ChangeSet = [Change]
 
 writeChanges mvS =
   liftIO $ do s <- readMVar mvS
-              writeFile "changes.txt" $ concatMap ((++ "\n\n") . show) $ sChangeSet s
+              writeFile "changes.txt" $ concatMap ((++ "\n\n") . show) $ sChangeSet s        
 
-addChange :: Double -> Change -> State -> State
-addChange now change s =
-  s {sChangeSet = change':changes}
-  where changes = sChangeSet s
-        change' = change {cWhen = now}
-        
-
-applyChange :: Change -> State -> State
-applyChange change s = s {sChangeSet = change:changes,
-                          sCode = ls
+applyChange :: State -> Change -> State
+applyChange s change = s {sChangeSet = change:changes,
+                          sCode = ls,
+                          sPos = cCursor change
                          }
   where ls | (cOrigin change) == "+input" = applyInput s change
            | (cOrigin change) == "+delete" = applyDelete s change
@@ -90,13 +85,18 @@ applyDelete s change = preL ++ ((preX ++ postX):postL)
         (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
 
 insertChange :: Pos -> [String] -> Change
-insertChange from str = Change {cFrom = from,
-ma                                cTo = from,
-                                cText = str,
-                                cRemoved = [""],
-                                cOrigin = "+input",
-                                cWhen = -1
-                               }
+insertChange (y,x) str = Change {cFrom = (y,x),
+                                 cTo = (y,x),
+                                 cText = str,
+                                 cRemoved = [""],
+                                 cOrigin = "+input",
+                                 cWhen = -1,
+                                 cCursor = (y',x')
+                                }
+  where y' = y + ((length str) - 1)
+        x' | length str == 1 = x + (length $ head str)
+           | otherwise = length $ last str
+
 
 deleteChange :: Pos -> Pos -> [String] -> Change
 deleteChange from to removed = Change {cFrom = from,
@@ -104,7 +104,8 @@ deleteChange from to removed = Change {cFrom = from,
                                        cText = [""],
                                        cRemoved = removed,
                                        cOrigin = "+delete",
-                                       cWhen = -1
+                                       cWhen = -1,
+                                       cCursor = from
                                       }
 
 goCursor state = moveCursor (offsetY + (fromIntegral $ fst $ sPos state)) (offsetX + (fromIntegral $ snd $ sPos state))
@@ -254,30 +255,21 @@ cursorContext' s (y,x) =
 insertBreak :: MVar State -> Curses ()
 insertBreak mvS =
   do s <- (liftIO $ takeMVar mvS)
-     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-         ls' = preL ++ (preX:postX:postL)
+     let (y,x) = sPos s
          (y',x') = (y+1,0)
-         change = insertChange (y,x) ["",""]
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     liftIO $ putMVar mvS $ addChange now change $ s {sCode = ls',
-                                                      sPos = (y',x'),
-                                                      sXWarp = 0
-                                                     }
+     let change = (insertChange (y,x) ["",""]) {cWhen = now}
+     liftIO $ putMVar mvS $ applyChange (s {sXWarp = 0}) change
      updateWindow (sWindow s) clear
 
 insertChar :: MVar State -> Char -> Curses ()
 insertChar mvS c =
   do s <- (liftIO $ takeMVar mvS)
-     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
+     let (y,x) = sPos s
          (y',x') = (y,x+1)
-         l' = preX ++ (c:postX)
-         ls' = preL ++ (l':postL)
-         change = insertChange (y,x) [[c]]
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     liftIO $ putMVar mvS $ addChange now change $ s {sCode = ls',
-                                                      sPos = (y',x'),
-                                                      sXWarp = x'
-                                                     }
+     let change = (insertChange (y,x) [[c]]) {cWhen = now}
+     liftIO $ putMVar mvS $ applyChange (s {sXWarp = x'}) change
      updateWindow (sWindow s) clear
 
 backspaceChar :: State -> State
@@ -292,18 +284,6 @@ backspaceChar s =
            | otherwise = (take ((length preX) - 1) preX) ++ postX
         ls' = preL ++ (l':postL)
 
-joinLines :: State -> State
-joinLines s =
-  s {sCode = ls',
-     sPos = (y',x'),
-     sXWarp = x'
-    }
-  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-        l' = (last preL) ++ l
-        ls' = (take ((length preL) - 1) preL) ++ (l':postL)
-        (y',x') = (y-1,length $ last preL)
-        sXWarp = x'
-
 charAt :: [String] -> (Int,Int) -> Char
 charAt ls (y,x) = (ls !! y) !! x
 
@@ -316,76 +296,35 @@ backspace mvS =
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let (y,x) = sPos s
          ls = sCode s
-         (s', change) | x > 0 =
-                          (backspaceChar s,
-                           Just $ deleteChange (y,x-1) (y,x) [[charAt ls (y,x-1)]]
-                          )
-                      | y == 0 = (s, Nothing)
-                      | otherwise = (joinLines s,
-                                     Just $ deleteChange (y-1,
-                                                          lineLength ls (y-1)
-                                                         ) (y, x) ["", ""]
-                                    )
-     liftIO $ putMVar mvS $ maybe s' (\c -> addChange now c s') change
+         change | x > 0 = (Just $ (deleteChange (y,x-1) (y,x) [[charAt ls (y,x-1)]]) {cWhen = now})
+                | y == 0 = Nothing
+                | otherwise = Just $ (deleteChange (y-1,
+                                                    lineLength ls (y-1)
+                                                   ) (y, x) ["", ""]
+                                     ) {cWhen = now}
+     liftIO $ putMVar mvS $ maybe s (applyChange s) change
      updateWindow (sWindow s) clear
-
-joinLinesBack :: State -> State
-joinLinesBack s =
-  s {sCode = ls',
-     sPos = (y',x'),
-     sXWarp = x'
-    }
-  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-        l' = l ++ head postL
-        ls' = preL ++ (l':(tail postL))
-        (y',x') = (y,x)
-        sXWarp = x'
-
-deleteChar :: State -> State
-deleteChar s =
-  s {sCode = ls',
-     sPos = (y',x'),
-     sXWarp = x'
-    }
-  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-        (y',x') = (y,x)
-        l' | x == ((length l)) = preX
-           | otherwise = preX ++ (tail postX)
-        ls' = preL ++ (l':postL)
-
-deleteToEnd :: State -> State
-deleteToEnd s =
-  s {sCode = ls',
-     sPos = (y',x'),
-     sXWarp = x'
-    }
-  where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-        (y',x') = (y,x)
-        l' = preX
-        ls' = preL ++ (l':postL)
 
 del :: MVar State -> Curses ()
 del mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-         (s', change) | x < (length l) = (deleteChar s,
-                                          Just $ deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]
-                                         )
-                      | y == ((length ls) - 1) = (s, Nothing)
-                      | otherwise = (joinLinesBack s, Just $ deleteChange (y,x) (y+1,0) ["",""])
-     liftIO $ putMVar mvS $ maybe s' (\c -> addChange now c s') change
+     let (ls, (y,x), _, l, _, _, _) = cursorContext s
+         change | x < (length l) = Just $ (deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]) {cWhen = now}
+                | y == ((length ls) - 1) = Nothing
+                | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
+     liftIO $ putMVar mvS $ maybe s (applyChange s) change
      updateWindow (sWindow s) clear
 
 killLine :: MVar State -> Curses ()
 killLine mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     let (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
-         (s',change) | x < (length l) = (deleteToEnd s, Just $ deleteChange (y,x) (y,(length l) -1) [postX])
-                     | y == ((length ls) - 1) = (s, Nothing)
-                     | otherwise = (joinLinesBack s, Just $ deleteChange (y,x) (y+1,0) ["",""])
-     liftIO $ putMVar mvS $ maybe s' (\c -> addChange now c s') change
+     let (ls, (y,x), _, l, _, _, postX) = cursorContext s
+         change | x < (length l) = Just $ deleteChange (y,x) (y,(length l)) [postX]
+                | y == ((length ls) - 1) = Nothing
+                | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
+     liftIO $ putMVar mvS $ maybe s (applyChange s) change
      updateWindow (sWindow s) clear
 
 eval :: MVar State -> Curses ()
