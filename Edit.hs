@@ -13,6 +13,12 @@ import Control.Concurrent (forkIO)
 import Sound.Tidal.Context (superDirtSetters, ParamPattern, cpsUtils)
 import Data.List (intercalate)
 import Data.Time.Clock.POSIX
+import Data.Time
+import Data.Time.Format
+import System.IO
+import System.Directory
+import System.FilePath
+import System.Posix.Process
 
 type Code = [String]
 type Pos = (Int, Int)
@@ -27,7 +33,8 @@ data State = State {sCode :: Code,
                     sHintIn :: MVar String,
                     sHintOut :: MVar Response,
                     sDirt :: ParamPattern -> IO (),
-                    sChangeSet :: ChangeSet
+                    sChangeSet :: ChangeSet,
+                    sLogFH :: Handle
                    }
 
 offsetY = 2
@@ -57,19 +64,17 @@ data Change = Change {cFrom :: Pos,
 
 type ChangeSet = [Change]
 
-writeChanges mvS =
-  liftIO $ do s <- readMVar mvS
-              writeFile "changes.txt" $ concatMap ((++ "\n\n") . show) $ sChangeSet s        
-
-applyChange :: State -> Change -> State
-applyChange s change = s {sChangeSet = change:changes,
-                          sCode = ls,
-                          sPos = cNewPos change
-                         }
+applyChange :: MVar State -> State -> Change -> IO ()
+applyChange mvS s change = do putMVar mvS s'
+                              writeLog s change
   where ls | (cOrigin change) == "+input" = applyInput s change
            | (cOrigin change) == "+delete" = applyDelete s change
            | otherwise = sCode s
         changes = sChangeSet s
+        s' = s {sChangeSet = change:changes,
+                sCode = ls,
+                sPos = cNewPos change
+               }
 
 applyInput :: State -> Change -> [String]
 applyInput s change = preL ++ added ++ postL
@@ -129,9 +134,9 @@ draw mvS
                else setColor (sFg s)
              drawString line
 
-initState :: Window -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> State
-initState w fg bg mIn mOut d
-  = State {sCode = ["every 3 rev $ sound \"bd sn\"", "  where foo = 1"],
+initState :: Window -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
+initState w fg bg mIn mOut d logFH
+  = State {sCode = ["sound \"bd sn\""],
            sPos = (0,0),
            sWindow = w,
            sXWarp = 0,
@@ -141,7 +146,8 @@ initState w fg bg mIn mOut d
            sHintIn = mIn,
            sHintOut = mOut,
            sDirt = d,
-           sChangeSet = []
+           sChangeSet = [],
+           sLogFH = logFH
           }
 
 moveHome :: MVar State -> Curses ()
@@ -170,6 +176,19 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                                                 sHilite = []
                                                }
 
+openLog :: IO Handle
+openLog = do t <- getZonedTime
+             id <- getProcessID
+             let d = formatTime defaultTimeLocale "%Y%m%dT%H%M%S" t
+                 filePath = logDirectory </> d ++ "-" ++ (show id) ++ ".txt"
+             createDirectoryIfMissing True logDirectory
+             openFile filePath WriteMode
+  where logDirectory = "logs"
+
+writeLog :: State -> Change -> IO ()
+writeLog s c = do hPutStrLn (sLogFH s) (show c)
+                  hFlush (sLogFH s)
+
 main :: IO ()
 main = do runCurses $ do
             setEcho False
@@ -182,7 +201,8 @@ main = do runCurses $ do
             liftIO $ forkIO $ hintJob (mIn, mOut)
             (_, getNow) <- liftIO cpsUtils
             (d, _) <- liftIO (superDirtSetters getNow)
-            mvS <- (liftIO $ newMVar $ initState w fg bg mIn mOut d)
+            logFH <- liftIO openLog
+            mvS <- (liftIO $ newMVar $ initState w fg bg mIn mOut d logFH)
             draw mvS
             render
             mainLoop mvS
@@ -224,8 +244,6 @@ keyCtrl mvS 'j' = insertBreak mvS
 
 keyCtrl mvS 'x' = eval mvS
 
-keyCtrl mvS 'l' = writeChanges mvS
-
 keyCtrl mvS _ = return ()
 
 {-
@@ -259,7 +277,7 @@ insertBreak mvS =
          (y',x') = (y+1,0)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let change = (insertChange (y,x) ["",""]) {cWhen = now}
-     liftIO $ putMVar mvS $ applyChange (s {sXWarp = 0}) change
+     liftIO $ applyChange mvS (s {sXWarp = 0}) change
      updateWindow (sWindow s) clear
 
 insertChar :: MVar State -> Char -> Curses ()
@@ -269,7 +287,7 @@ insertChar mvS c =
          (y',x') = (y,x+1)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let change = (insertChange (y,x) [[c]]) {cWhen = now}
-     liftIO $ putMVar mvS $ applyChange (s {sXWarp = x'}) change
+     liftIO $ applyChange mvS (s {sXWarp = x'}) change
      updateWindow (sWindow s) clear
 
 backspaceChar :: State -> State
@@ -302,7 +320,7 @@ backspace mvS =
                                                     lineLength ls (y-1)
                                                    ) (y, x) ["", ""]
                                      ) {cWhen = now}
-     liftIO $ putMVar mvS $ maybe s (applyChange s) change
+     liftIO $ maybe (return ()) (applyChange mvS s) change
      updateWindow (sWindow s) clear
 
 del :: MVar State -> Curses ()
@@ -313,7 +331,7 @@ del mvS =
          change | x < (length l) = Just $ (deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]) {cWhen = now}
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
-     liftIO $ putMVar mvS $ maybe s (applyChange s) change
+     liftIO $ maybe (return ()) (applyChange mvS s) change
      updateWindow (sWindow s) clear
 
 killLine :: MVar State -> Curses ()
@@ -324,7 +342,7 @@ killLine mvS =
          change | x < (length l) = Just $ deleteChange (y,x) (y,(length l)) [postX]
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
-     liftIO $ putMVar mvS $ maybe s (applyChange s) change
+     liftIO $ maybe (return ()) (applyChange mvS s) change
      updateWindow (sWindow s) clear
 
 eval :: MVar State -> Curses ()
