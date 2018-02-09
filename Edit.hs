@@ -51,7 +51,7 @@ data Change = Change {cFrom :: Pos,
                       cRemoved :: [String],
                       cOrigin :: String,
                       cWhen :: Double,
-                      cCursor :: Pos
+                      cNewPos :: Pos
                      }
             deriving Show
 
@@ -64,7 +64,7 @@ writeChanges mvS =
 applyChange :: State -> Change -> State
 applyChange s change = s {sChangeSet = change:changes,
                           sCode = ls,
-                          sPos = cCursor change
+                          sPos = cNewPos change
                          }
   where ls | (cOrigin change) == "+input" = applyInput s change
            | (cOrigin change) == "+delete" = applyDelete s change
@@ -91,7 +91,7 @@ insertChange (y,x) str = Change {cFrom = (y,x),
                                  cRemoved = [""],
                                  cOrigin = "+input",
                                  cWhen = -1,
-                                 cCursor = (y',x')
+                                 cNewPos = (y',x')
                                 }
   where y' = y + ((length str) - 1)
         x' | length str == 1 = x + (length $ head str)
@@ -105,7 +105,7 @@ deleteChange from to removed = Change {cFrom = from,
                                        cRemoved = removed,
                                        cOrigin = "+delete",
                                        cWhen = -1,
-                                       cCursor = from
+                                       cNewPos = from
                                       }
 
 goCursor state = moveCursor (offsetY + (fromIntegral $ fst $ sPos state)) (offsetX + (fromIntegral $ snd $ sPos state))
