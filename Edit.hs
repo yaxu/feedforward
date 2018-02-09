@@ -27,9 +27,10 @@ data State = State {sCode :: Code,
                     sPos :: Pos,
                     sXWarp :: Int,
                     sWindow :: Window,
-                    sFg :: ColorID,
-                    sBg :: ColorID,
-                    sHilite :: [Int],
+                    sColour :: ColorID,
+                    sColourHilite :: ColorID,
+                    sColourWarn :: ColorID,
+                    sHilite :: (Bool, [Int]),
                     sHintIn :: MVar String,
                     sHintOut :: MVar Response,
                     sDirt :: ParamPattern -> IO (),
@@ -120,7 +121,7 @@ draw mvS
   = do s <- (liftIO $ readMVar mvS)
        updateWindow (sWindow s) $ do
          (h,w) <- windowSize
-         setColor (sBg s)
+         setColor (sColourHilite s)
          moveCursor 0 0
          let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
          drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
@@ -129,20 +130,24 @@ draw mvS
          return ()
   where drawLine s (line, n) =
           do moveCursor (n + offsetY) offsetX
-             if elem (fromIntegral n) (sHilite s)
-               then setColor (sBg s)
-               else setColor (sFg s)
+             if elem (fromIntegral n) (snd $ sHilite s)
+               then setColor (if (fst $ sHilite s)
+                              then sColourHilite s
+                              else sColourWarn s
+                             )
+               else setColor (sColour s)
              drawString line
 
-initState :: Window -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
-initState w fg bg mIn mOut d logFH
+initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
+initState w fg bg warn mIn mOut d logFH
   = State {sCode = ["sound \"bd sn\""],
            sPos = (0,0),
            sWindow = w,
            sXWarp = 0,
-           sFg = fg,
-           sBg = bg,
-           sHilite = [],
+           sColour = fg,
+           sColourHilite = bg,
+           sColourWarn = warn,
+           sHilite = (False, []),
            sHintIn = mIn,
            sHintOut = mOut,
            sDirt = d,
@@ -173,7 +178,7 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                           x'' = min xw maxX
                       liftIO $ putMVar mvS $ s {sPos = (y',x''),
                                                 sXWarp = xw,
-                                                sHilite = []
+                                                sHilite = (False, [])
                                                }
 
 openLog :: IO Handle
@@ -196,13 +201,14 @@ main = do runCurses $ do
             updateWindow w clear
             fg <- newColorID ColorWhite ColorBlack 1
             bg <- newColorID ColorBlack ColorWhite 2
+            warn <- newColorID ColorRed ColorBlack 3
             mIn <- liftIO newEmptyMVar
             mOut <- liftIO newEmptyMVar
             liftIO $ forkIO $ hintJob (mIn, mOut)
             (_, getNow) <- liftIO cpsUtils
             (d, _) <- liftIO (superDirtSetters getNow)
             logFH <- liftIO openLog
-            mvS <- (liftIO $ newMVar $ initState w fg bg mIn mOut d logFH)
+            mvS <- (liftIO $ newMVar $ initState w fg bg warn mIn mOut d logFH)
             draw mvS
             render
             mainLoop mvS
@@ -361,15 +367,17 @@ eval mvS =
          codeblock = intercalate "\n" (map (ls !!) findBlock)
      liftIO $ putMVar (sHintIn s) codeblock
      response <- liftIO $ takeMVar (sHintOut s)
-     act s response
-     liftIO $ putMVar mvS $ s {sHilite = findBlock}
+     ok <- act s response
+     liftIO $ putMVar mvS $ s {sHilite = (ok, findBlock)}
      draw mvS
   where
-    act s (HintOK p) = liftIO $ (sDirt s) p
+    act s (HintOK p) = do liftIO $ (sDirt s) p
+                          return True
     act s (HintError err) =
       do updateWindow (sWindow s) $ do
            moveCursor 15 0
            drawString $ show err
+         return False
 
 
 
