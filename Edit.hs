@@ -326,7 +326,7 @@ backspace mvS =
                                                     lineLength ls (y-1)
                                                    ) (y, x) ["", ""]
                                      ) {cWhen = now}
-     liftIO $ maybe (return ()) (applyChange mvS s) change
+     liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
      updateWindow (sWindow s) clear
 
 del :: MVar State -> Curses ()
@@ -337,7 +337,7 @@ del mvS =
          change | x < (length l) = Just $ (deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]) {cWhen = now}
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
-     liftIO $ maybe (return ()) (applyChange mvS s) change
+     liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
      updateWindow (sWindow s) clear
 
 killLine :: MVar State -> Curses ()
@@ -348,7 +348,7 @@ killLine mvS =
          change | x < (length l) = Just $ deleteChange (y,x) (y,(length l)) [postX]
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
-     liftIO $ maybe (return ()) (applyChange mvS s) change
+     liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
      updateWindow (sWindow s) clear
 
 eval :: MVar State -> Curses ()
