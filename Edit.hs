@@ -4,21 +4,24 @@
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-import UI.NCurses
+import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Monad.IO.Class
 import Data.Char
-import TidalHint
-import Control.Concurrent (forkIO)
-import Sound.Tidal.Context (superDirtSetters, ParamPattern, cpsUtils)
 import Data.List (intercalate)
-import Data.Time.Clock.POSIX
+import Data.Maybe (fromMaybe)
 import Data.Time
+import Data.Time.Clock.POSIX
 import Data.Time.Format
-import System.IO
+import Sound.OSC.FD
+import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils)
 import System.Directory
 import System.FilePath
+import System.IO
 import System.Posix.Process
+import TidalHint
+import UI.NCurses
+import Text.Printf
 
 type Code = [String]
 type Pos = (Int, Int)
@@ -35,7 +38,8 @@ data State = State {sCode :: Code,
                     sHintOut :: MVar Response,
                     sDirt :: ParamPattern -> IO (),
                     sChangeSet :: ChangeSet,
-                    sLogFH :: Handle
+                    sLogFH :: Handle,
+                    sRMS :: [[Float]]
                    }
 
 offsetY = 2
@@ -121,10 +125,21 @@ draw mvS
   = do s <- (liftIO $ readMVar mvS)
        updateWindow (sWindow s) $ do
          (h,w) <- windowSize
-         setColor (sColourHilite s)
+         setColor (sColour s)
          moveCursor 0 0
-         let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
-         drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
+         let rmsw = ((fromIntegral w) / 2) - 6
+             rms = map ((min rmsw) . (1000 *) . head) $ sRMS s
+             chars = reverse "█▓▒░"
+             sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
+             bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
+             str = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
+         setColor (sColourHilite s)
+         drawString $ reverse str ++ "feedforward" ++ str
+         -- moveCursor 2 0
+         -- drawString $ (printf "%03.4f " $ head $ head $ sRMS s) ++ (printf "%03f" $ head rms)
+         -- moveCursor 1 0
+         -- let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
+         -- drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
          mapM_ (drawLine s) $ zip (sCode s) [0 ..]
          goCursor s
          return ()
@@ -152,7 +167,8 @@ initState w fg bg warn mIn mOut d logFH
            sHintOut = mOut,
            sDirt = d,
            sChangeSet = [],
-           sLogFH = logFH
+           sLogFH = logFH,
+           sRMS = [[0]]
           }
 
 moveHome :: MVar State -> Curses ()
@@ -194,6 +210,19 @@ writeLog :: State -> Change -> IO ()
 writeLog s c = do hPutStrLn (sLogFH s) (show c)
                   hFlush (sLogFH s)
 
+listenRMS :: MVar State -> IO ()
+listenRMS mvS = do x <- udpServer "127.0.0.1" 6010
+                   loop x
+  where
+    loop x = 
+      do m <- recvMessage x
+         act m
+         loop x
+    act (Just m) = do let xs = map (fromMaybe 0 . datum_floating) $ messageDatum m
+                      s <- takeMVar mvS
+                      putMVar mvS $ s {sRMS = xs:(take 3 $ sRMS s)}
+    act _ = return ()
+
 main :: IO ()
 main = do runCurses $ do
             setEcho False
@@ -206,18 +235,18 @@ main = do runCurses $ do
             mOut <- liftIO newEmptyMVar
             liftIO $ forkIO $ hintJob (mIn, mOut)
             (_, getNow) <- liftIO cpsUtils
-            (d, _) <- liftIO (superDirtSetters getNow)
+            (d, _) <- liftIO (dirtSetters getNow)
             logFH <- liftIO openLog
             mvS <- (liftIO $ newMVar $ initState w fg bg warn mIn mOut d logFH)
+            liftIO $ forkIO $ listenRMS mvS
             draw mvS
             render
             mainLoop mvS
 
 mainLoop mvS = loop where
   loop = do draw mvS
-            render
             s <- liftIO (readMVar mvS)
-            ev <- getEvent (sWindow s) Nothing
+            ev <- getEvent (sWindow s) (Just 50)
             case ev of
              Nothing -> loop
              Just (EventCharacter x) -> if x == esc
@@ -233,6 +262,11 @@ mainLoop mvS = loop where
              Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> loop
              Just (EventSpecialKey KeyBackspace) -> backspace mvS >> loop
              Just _ -> loop
+             {-
+Just e -> do updateWindow (sWindow s) $ do
+                            moveCursor 18 10
+                            drawString $ show e
+                          loop -}
       where esc = chr(27)
 
 -- emacs movement
@@ -379,12 +413,3 @@ eval mvS =
            drawString $ show err
          return False
 
-
-
-waitFor :: Window -> (Event -> Bool) -> Curses ()
-waitFor w p = loop where
-    loop = do
-        ev <- getEvent w Nothing
-        case ev of
-            Nothing -> loop
-            Just ev' -> if p ev' then return () else loop
