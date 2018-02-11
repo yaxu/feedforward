@@ -197,6 +197,18 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                                                 sHilite = (False, [])
                                                }
 
+
+moveTo :: MVar State -> (Int, Int) -> Curses ()
+moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
+                      let maxY = (length $ sCode s) - 1
+                          y' = min maxY y
+                          maxX = length $ (sCode s) !! y'
+                          x' = min maxX x
+                      liftIO $ putMVar mvS $ s {sPos = (y',x'),
+                                                sXWarp = x',
+                                                sHilite = (False, [])
+                                               }
+
 openLog :: IO Handle
 openLog = do t <- getZonedTime
              id <- getProcessID
@@ -245,11 +257,12 @@ main = do runCurses $ do
 
 mainLoop mvS = loop where
   loop = do draw mvS
+            render
             s <- liftIO (readMVar mvS)
             ev <- getEvent (sWindow s) (Just 50)
             case ev of
              Nothing -> loop
-             Just (EventCharacter x) -> if x == esc
+             Just (EventCharacter x) -> if x == chr(27)
                                         then return ()
                                         else keypress mvS x >> loop
              Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> loop
@@ -261,13 +274,9 @@ mainLoop mvS = loop where
              Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> loop
              Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> loop
              Just (EventSpecialKey KeyBackspace) -> backspace mvS >> loop
-             Just _ -> loop
-             {-
-Just e -> do updateWindow (sWindow s) $ do
-                            moveCursor 18 10
-                            drawString $ show e
-                          loop -}
-      where esc = chr(27)
+             Just (EventMouse _ ms) -> mouse mvS ms >> loop
+             Just e -> do liftIO $ hPutStrLn stderr $ show e
+                          loop
 
 -- emacs movement
 keyCtrl mvS 'a' = moveHome mvS
@@ -285,6 +294,9 @@ keyCtrl mvS 'j' = insertBreak mvS
 keyCtrl mvS 'x' = eval mvS
 
 keyCtrl mvS _ = return ()
+
+mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-offsetY) 0),fromIntegral (max (x-offsetX) 0))
+mouse _ _ = return ()
 
 {-
 keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
