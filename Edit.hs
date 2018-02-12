@@ -8,8 +8,8 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Monad.IO.Class
 import Data.Char
-import Data.List (intercalate)
-import Data.Maybe (fromMaybe)
+import Data.List (intercalate, (\\))
+import Data.Maybe (fromMaybe, catMaybes, isJust, fromJust)
 import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Time.Format
@@ -23,7 +23,7 @@ import TidalHint
 import UI.NCurses
 import Text.Printf
 
-type Tag = (Int, Int)
+type Tag = Int
 data Line = Line {lTag :: Maybe Tag,
                   lText :: String
                  }
@@ -48,7 +48,7 @@ data State = State {sCode :: Code,
                    }
 
 offsetY = 2
-offsetX = 1
+offsetX = 3
 
 {- Fires every time the content of the editor is changed. The changeObj
 is a {from, to, text, removed, origin} object containing information
@@ -74,11 +74,35 @@ data Change = Change {cFrom :: Pos,
 
 type ChangeSet = [Change]
 
+hasChar :: Line -> Bool
+hasChar = or . map (/= ' ') . lText
+
+updateTags :: Code -> Code
+updateTags ls = assignTags freeTags ls'
+  where assignTags :: [Tag] -> Code -> Code
+        assignTags [] (l:ls) = (l:ls)
+        assignTags _ [] = []
+        assignTags ids (l:ls) | lTag l == Just (-1) = (l {lTag = Just $ head ids}):(assignTags (tail ids) ls)
+                              | otherwise = l:(assignTags ids ls)
+        freeTags = [0 .. 9] \\ tagIds
+        tagIds = catMaybes $ map lTag ls'
+        ls' = map tag toTag
+        tag :: (Bool, Line) -> Line
+        tag (False, l) = l {lTag = Nothing}
+        tag (True, l) | isJust (lTag l) = l
+                      | otherwise = l {lTag = Just (-1)} -- mark as to tag
+        toTag :: [(Bool, Line)]
+        toTag = taggable True ls
+        taggable :: Bool -> Code -> [(Bool, Line)]
+        taggable _ [] = []
+        taggable prevEmpty (l:ls) = (prevEmpty && (not empty), l):(taggable empty ls)
+          where empty = not $ hasChar l
+
 applyChange :: MVar State -> State -> Change -> IO ()
 applyChange mvS s change = do putMVar mvS s'
                               writeLog s change
-  where ls | (cOrigin change) == "+input" = applyInput s change
-           | (cOrigin change) == "+delete" = applyDelete s change
+  where ls | (cOrigin change) == "+input" = updateTags $ applyInput s change
+           | (cOrigin change) == "+delete" = updateTags $ applyDelete s change
            | otherwise = sCode s
         changes = sChangeSet s
         s' = s {sChangeSet = change:changes,
@@ -154,7 +178,7 @@ draw mvS
          goCursor s
          return ()
   where drawLine :: State -> (Line, Integer) -> Update ()
-        drawLine s (line, n) =
+        drawLine s (l, n) =
           do moveCursor (n + offsetY) offsetX
              if elem (fromIntegral n) (snd $ sHilite s)
                then setColor (if (fst $ sHilite s)
@@ -162,11 +186,16 @@ draw mvS
                               else sColourWarn s
                              )
                else setColor (sColour s)
-             drawString (lText line)
+             drawString (lText l)
+             moveCursor (n + offsetY) 0
+             drawString str
+               where str | isJust (lTag l) = (show $ fromJust (lTag l)) ++ "|"
+                         | hasChar l = " |"
+                         | otherwise = ""
 
 initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
 initState w fg bg warn mIn mOut d logFH
-  = State {sCode = [Line Nothing "sound \"bd sn\""],
+  = State {sCode = [Line (Just 0) "sound \"bd sn\""],
            sPos = (0,0),
            sWindow = w,
            sXWarp = 0,
@@ -423,7 +452,6 @@ eval mvS =
          post | y == ((length ls) - 1) = []
               | otherwise = findChars [y+1 .. ((length ls) - 1)]
          findBlock = pre ++ post
-         hasChar = or . map (/= ' ') . lText
          codeblock = intercalate "\n" (map (lText . (ls !!)) findBlock)
      liftIO $ putMVar (sHintIn s) codeblock
      response <- liftIO $ takeMVar (sHintOut s)
