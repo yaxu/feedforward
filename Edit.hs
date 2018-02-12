@@ -23,7 +23,12 @@ import TidalHint
 import UI.NCurses
 import Text.Printf
 
-type Code = [String]
+type Tag = (Int, Int)
+data Line = Line {lTag :: Maybe Tag,
+                  lText :: String
+                 }
+
+type Code = [Line]
 type Pos = (Int, Int)
 
 data State = State {sCode :: Code,
@@ -81,16 +86,21 @@ applyChange mvS s change = do putMVar mvS s'
                 sPos = cNewPos change
                }
 
-applyInput :: State -> Change -> [String]
+withLineText :: Line -> (String -> String)  -> Line
+withLineText (Line tag text) f = Line tag (f text )
+
+applyInput :: State -> Change -> Code
 applyInput s change = preL ++ added ++ postL
   where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext' s (cFrom change)
-        added = addToHead preX $ addToLast postX $ cText change
-        addToHead :: [a] -> [[a]] -> [[a]]
-        addToHead x xs = (x ++ (head xs)) : tail xs
-        addToLast x xs = init xs ++ [(last xs ++ x)]
+        added :: Code
+        added = addToHead preX $ addToLast postX $ map (Line Nothing) (cText change)
+        addToHead :: String -> Code -> Code
+        addToHead x xs = (withLineText (head xs) (x ++)) : tail xs
+        addToLast :: String -> Code -> Code
+        addToLast x xs = init xs ++ [withLineText (last xs) (++ x)]
 
-applyDelete :: State -> Change -> [String]
-applyDelete s change = preL ++ ((preX ++ postX):postL)
+applyDelete :: State -> Change -> Code
+applyDelete s change = preL ++ ((Line Nothing $ preX ++ postX):postL)
   where (_, _, preL, _, _, preX, _) = cursorContext' s (cFrom change)
         (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
 
@@ -143,7 +153,8 @@ draw mvS
          mapM_ (drawLine s) $ zip (sCode s) [0 ..]
          goCursor s
          return ()
-  where drawLine s (line, n) =
+  where drawLine :: State -> (Line, Integer) -> Update ()
+        drawLine s (line, n) =
           do moveCursor (n + offsetY) offsetX
              if elem (fromIntegral n) (snd $ sHilite s)
                then setColor (if (fst $ sHilite s)
@@ -151,11 +162,11 @@ draw mvS
                               else sColourWarn s
                              )
                else setColor (sColour s)
-             drawString line
+             drawString (lText line)
 
 initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
 initState w fg bg warn mIn mOut d logFH
-  = State {sCode = ["sound \"bd sn\""],
+  = State {sCode = [Line Nothing "sound \"bd sn\""],
            sPos = (0,0),
            sWindow = w,
            sXWarp = 0,
@@ -176,9 +187,10 @@ moveHome mvS = do s <- liftIO (readMVar mvS)
                   let (_, x) = sPos s
                   move mvS (0, 0-x)
 
+moveEnd :: MVar State -> Curses ()
 moveEnd mvS = do s <- liftIO (readMVar mvS)
                  let (y, x) = sPos s
-                     xTo = length ((sCode s) !! y)
+                     xTo = length (lText $ (sCode s) !! y)
                  move mvS (0, xTo-x)
 
 move :: MVar State -> (Int, Int) -> Curses ()
@@ -187,7 +199,7 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                           (y,x) = sPos s
                           y' = max 0 $ min maxY (y + yd)
                           maxX | (length $ sCode s) == y' = 0
-                               | otherwise = length $ (sCode s) !! y'
+                               | otherwise = length $ lText $ (sCode s) !! y'
                           x' = max 0 $ min maxX (x + xd)
                           xw | xd /= 0 = x'
                              | otherwise = sXWarp s
@@ -202,7 +214,7 @@ moveTo :: MVar State -> (Int, Int) -> Curses ()
 moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
                       let maxY = (length $ sCode s) - 1
                           y' = min maxY y
-                          maxX = length $ (sCode s) !! y'
+                          maxX = length $ lText $ (sCode s) !! y'
                           x' = min maxX x
                       liftIO $ putMVar mvS $ s {sPos = (y',x'),
                                                 sXWarp = x',
@@ -310,16 +322,18 @@ keypress mvS c | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
   where isCtrl = ord(c) >= 1 && ord(c) <= 26
 
 
+cursorContext :: State -> (Code, Pos, Code, Line, Code, String, String)
 cursorContext s = cursorContext' s (sPos s)
 
+cursorContext' :: State -> Pos -> (Code, Pos, Code, Line, Code, String, String)
 cursorContext' s (y,x) =
   (ls, (y,x), preL, l, postL, preX, postX)
   where  ls = sCode s
          preL = take y ls
          l = head $ drop y ls
          postL = drop (y+1) ls
-         preX = take x l
-         postX = drop x l
+         preX = take x $ lText l
+         postX = drop x $ lText l
      
 
 insertBreak :: MVar State -> Curses ()
@@ -350,15 +364,15 @@ backspaceChar s =
     }
   where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext s
         (y',x') = (y,max 0 (x-1))
-        l' | x == 0 = postX
-           | otherwise = (take ((length preX) - 1) preX) ++ postX
+        l' | x == 0 = Line Nothing postX
+           | otherwise = Line Nothing $ (take ((length preX) - 1) preX) ++ postX
         ls' = preL ++ (l':postL)
 
-charAt :: [String] -> (Int,Int) -> Char
-charAt ls (y,x) = (ls !! y) !! x
+charAt :: Code -> (Int,Int) -> Char
+charAt ls (y,x) = (lText $ ls !! y) !! x
 
-lineLength :: [String] -> Int -> Int
-lineLength ls y = length $ ls !! y
+lineLength :: Code -> Int -> Int
+lineLength ls y = length $ lText $ ls !! y
 
 backspace :: MVar State -> Curses ()
 backspace mvS =
@@ -380,7 +394,7 @@ del mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let (ls, (y,x), _, l, _, _, _) = cursorContext s
-         change | x < (length l) = Just $ (deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]) {cWhen = now}
+         change | x < (length $ lText l) = Just $ (deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]) {cWhen = now}
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
      liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
@@ -391,7 +405,7 @@ killLine mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let (ls, (y,x), _, l, _, _, postX) = cursorContext s
-         change | x < (length l) = Just $ deleteChange (y,x) (y,(length l)) [postX]
+         change | x < (length $ lText l) = Just $ deleteChange (y,x) (y,(length $ lText l)) [postX]
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
      liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
@@ -409,8 +423,8 @@ eval mvS =
          post | y == ((length ls) - 1) = []
               | otherwise = findChars [y+1 .. ((length ls) - 1)]
          findBlock = pre ++ post
-         hasChar = or . map (/= ' ')
-         codeblock = intercalate "\n" (map (ls !!) findBlock)
+         hasChar = or . map (/= ' ') . lText
+         codeblock = intercalate "\n" (map (lText . (ls !!)) findBlock)
      liftIO $ putMVar (sHintIn s) codeblock
      response <- liftIO $ takeMVar (sHintOut s)
      ok <- act s response
