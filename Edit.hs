@@ -6,6 +6,7 @@
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
+import Control.Monad (foldM)
 import Control.Monad.IO.Class
 import Data.Char
 import Data.List (intercalate, (\\))
@@ -24,9 +25,30 @@ import UI.NCurses
 import Text.Printf
 
 type Tag = Int
-data Line = Line {lTag :: Maybe Tag,
+
+data Status = Success | Error | Normal
+
+data Block = Block {bTag :: Tag,
+                    bActive :: Bool,
+                    bModified :: Bool,
+                    bStatus :: Status
+                   }
+
+data Line = Line {lBlock :: Maybe Block,
                   lText :: String
                  }
+
+lTag :: Line -> Maybe Tag
+lTag l = do block <- lBlock l
+            return $ bTag block
+
+lActive :: Line -> Bool
+lActive (Line {lBlock = Just (Block {bActive = a})}) = a
+lActive _ = False
+
+setTag :: Line -> Tag -> Line
+setTag l@(Line {lBlock = (Just b)}) tag = l {lBlock = Just (b {bTag = tag})}
+setTag l@(Line {lBlock = Nothing}) tag = l {lBlock = Just (Block {bTag = tag, bActive = True, bModified=True, bStatus = Normal})}
 
 type Code = [Line]
 type Pos = (Int, Int)
@@ -38,7 +60,7 @@ data State = State {sCode :: Code,
                     sColour :: ColorID,
                     sColourHilite :: ColorID,
                     sColourWarn :: ColorID,
-                    sHilite :: (Bool, [Int]),
+                    -- sHilite :: (Bool, [Int]),
                     sHintIn :: MVar String,
                     sHintOut :: MVar Response,
                     sDirt :: ParamPattern -> IO (),
@@ -82,15 +104,15 @@ updateTags ls = assignTags freeTags ls'
   where assignTags :: [Tag] -> Code -> Code
         assignTags [] (l:ls) = (l:ls)
         assignTags _ [] = []
-        assignTags ids (l:ls) | lTag l == Just (-1) = (l {lTag = Just $ head ids}):(assignTags (tail ids) ls)
+        assignTags ids (l:ls) | lTag l == Just (-1) = (setTag l (head ids)):(assignTags (tail ids) ls)
                               | otherwise = l:(assignTags ids ls)
         freeTags = [0 .. 9] \\ tagIds
         tagIds = catMaybes $ map lTag ls'
         ls' = map tag toTag
         tag :: (Bool, Line) -> Line
-        tag (False, l) = l {lTag = Nothing}
+        tag (False, l) = l {lBlock = Nothing}
         tag (True, l) | isJust (lTag l) = l
-                      | otherwise = l {lTag = Just (-1)} -- mark as to tag
+                      | otherwise = setTag l (-1) -- mark to tag
         toTag :: [(Bool, Line)]
         toTag = taggable True ls
         taggable :: Bool -> Code -> [(Bool, Line)]
@@ -180,12 +202,14 @@ draw mvS
   where drawLine :: State -> (Line, Integer) -> Update ()
         drawLine s (l, n) =
           do moveCursor (n + offsetY) offsetX
-             if elem (fromIntegral n) (snd $ sHilite s)
+{-             if elem (fromIntegral n) (snd $ sHilite s)
                then setColor (if (fst $ sHilite s)
                               then sColourHilite s
                               else sColourWarn s
                              )
                else setColor (sColour s)
+-}
+             setColor (sColour s)
              drawString (lText l)
              moveCursor (n + offsetY) 0
              drawString str
@@ -195,14 +219,14 @@ draw mvS
 
 initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
 initState w fg bg warn mIn mOut d logFH
-  = State {sCode = [Line (Just 0) "sound \"bd sn\""],
+  = State {sCode = [Line (Just $ Block 0 True True Normal) "sound \"bd sn\""],
            sPos = (0,0),
            sWindow = w,
            sXWarp = 0,
            sColour = fg,
            sColourHilite = bg,
            sColourWarn = warn,
-           sHilite = (False, []),
+           -- sHilite = (False, []),
            sHintIn = mIn,
            sHintOut = mOut,
            sDirt = d,
@@ -234,8 +258,8 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                              | otherwise = sXWarp s
                           x'' = min xw maxX
                       liftIO $ putMVar mvS $ s {sPos = (y',x''),
-                                                sXWarp = xw,
-                                                sHilite = (False, [])
+                                                sXWarp = xw
+                                                -- sHilite = (False, [])
                                                }
 
 
@@ -246,8 +270,8 @@ moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
                           maxX = length $ lText $ (sCode s) !! y'
                           x' = min maxX x
                       liftIO $ putMVar mvS $ s {sPos = (y',x'),
-                                                sXWarp = x',
-                                                sHilite = (False, [])
+                                                sXWarp = x'
+                                                -- sHilite = (False, [])
                                                }
 
 openLog :: IO Handle
@@ -443,6 +467,39 @@ killLine mvS =
 eval :: MVar State -> Curses ()
 eval mvS = 
   do s <- (liftIO $ takeMVar mvS)
+     let blocks = activeBlocks 0 $ sCode s
+     (s',ps) <- liftIO $ foldM evalBlock (s, []) blocks
+     liftIO $ putMVar mvS s'
+     return ()
+
+evalBlock :: (State, [ParamPattern]) -> (Int, Code) -> IO (State, [ParamPattern])
+evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
+                              liftIO $ putMVar (sHintIn s) code
+                              response <- liftIO $ takeMVar (sHintOut s)
+                              let block = fromJust $ lBlock $ (sCode s) !! n
+                                  (block', ps') = act response block
+                                  s' = setBlock n block'
+                              return (s', ps')
+  where act (HintOK p) b = (b {bStatus = Success, bModified = False}, p:ps)
+        act (HintError err) b = (b {bStatus = Error}, ps)
+        setBlock n block = s {sCode = ls}
+          where ls = sCode s
+                l = (ls !! n) {lBlock = Just block}
+                ls' = take n ls ++ (l:(drop (n+1) ls))
+
+
+activeBlocks :: Int -> Code -> [(Int, Code)]
+activeBlocks _ [] = []
+activeBlocks n (l:ls) | not (hasChar l) = activeBlocks (n+1) ls
+                      | lActive l = (n,b):(activeBlocks (n+(length b)) ls')
+                      | otherwise = activeBlocks (n+1) ls
+  where b = takeWhile hasChar ls
+        ls' = drop (length b) ls
+
+{-
+eval' :: MVar State -> Curses ()
+eval' mvS = 
+  do s <- (liftIO $ takeMVar mvS)
      let (y,_) = sPos s
          ls = sCode s
          block | hasChar (ls !! y) = findBlock
@@ -467,3 +524,4 @@ eval mvS =
            drawString $ show err
          return False
 
+-}
