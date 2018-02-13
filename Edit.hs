@@ -471,14 +471,10 @@ killLine mvS =
 
 eval :: MVar State -> Curses ()
 eval mvS = 
-  do liftIO $ hPutStrLn stderr $ "eval"
-     s <- (liftIO $ takeMVar mvS)
+  do s <- (liftIO $ takeMVar mvS)
      let blocks = activeBlocks 0 $ sCode s
      
-     liftIO $ do liftIO $ hPutStrLn stderr $ "all the code: " ++ (show $ sCode s)
-                 hPutStrLn stderr $ "blocks: " ++ show blocks
-                 (s',ps) <- foldM evalBlock (s, []) blocks
-                 hPutStrLn stderr $ "patterns: " ++ show ps
+     liftIO $ do (s',ps) <- foldM evalBlock (s, []) blocks
                  (sDirt s) (stack ps)
                  putMVar mvS s'
      return ()
@@ -487,9 +483,7 @@ evalBlock :: (State, [ParamPattern]) -> (Int, Code) -> IO (State, [ParamPattern]
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
-                              liftIO $ hPutStrLn stderr $ "code: " ++ code
                               response <- liftIO $ takeMVar (sHintOut s)
-                              liftIO $ hPutStrLn stderr $ "result: " ++ show response
                               
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act id response block
