@@ -15,7 +15,7 @@ import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Time.Format
 import Sound.OSC.FD
-import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils)
+import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils, stack, orbit, (#))
 import System.Directory
 import System.FilePath
 import System.IO
@@ -27,16 +27,19 @@ import Text.Printf
 type Tag = Int
 
 data Status = Success | Error | Normal
+            deriving Show
 
 data Block = Block {bTag :: Tag,
                     bActive :: Bool,
                     bModified :: Bool,
                     bStatus :: Status
                    }
+             deriving Show
 
 data Line = Line {lBlock :: Maybe Block,
                   lText :: String
                  }
+             deriving Show
 
 lTag :: Line -> Maybe Tag
 lTag l = do block <- lBlock l
@@ -182,20 +185,12 @@ draw mvS
        updateWindow (sWindow s) $ do
          (h,w) <- windowSize
          setColor (sColour s)
+         let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
          moveCursor 0 0
-         let rmsw = ((fromIntegral w) / 2) - 6
-             rms = map ((min rmsw) . (1000 *) . head) $ sRMS s
-             chars = reverse "█▓▒░"
-             sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
-             bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
-             str = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
          setColor (sColourHilite s)
-         drawString $ reverse str ++ "feedforward" ++ str
-         -- moveCursor 2 0
-         -- drawString $ (printf "%03.4f " $ head $ head $ sRMS s) ++ (printf "%03f" $ head rms)
-         -- moveCursor 1 0
-         -- let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
-         -- drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
+         drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
+         let blocks = activeBlocks 0 $ sCode s
+         mapM_ (drawRMS s w) blocks
          mapM_ (drawLine s) $ zip (sCode s) [0 ..]
          goCursor s
          return ()
@@ -216,6 +211,16 @@ draw mvS
                where str | isJust (lTag l) = (show $ fromJust (lTag l)) ++ "|"
                          | hasChar l = " |"
                          | otherwise = ""
+        drawRMS s w (y,ls) = do let rmsw = ((fromIntegral w) / 2)
+                                    id = fromJust $ lTag $ head ls
+                                    rms = map ((min rmsw) . (1000 *)) $ map (!! id) (sRMS s) 
+                                    chars = "█▓▒░"
+                                    sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
+                                    bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
+                                    str = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
+                                setColor (sColour s)
+                                moveCursor (fromIntegral y + offsetY - 1) 0
+                                drawString $ (reverse str) ++ str
 
 initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
 initState w fg bg warn mIn mOut d logFH
@@ -466,22 +471,32 @@ killLine mvS =
 
 eval :: MVar State -> Curses ()
 eval mvS = 
-  do s <- (liftIO $ takeMVar mvS)
+  do liftIO $ hPutStrLn stderr $ "eval"
+     s <- (liftIO $ takeMVar mvS)
      let blocks = activeBlocks 0 $ sCode s
-     (s',ps) <- liftIO $ foldM evalBlock (s, []) blocks
-     liftIO $ putMVar mvS s'
+     
+     liftIO $ do liftIO $ hPutStrLn stderr $ "all the code: " ++ (show $ sCode s)
+                 hPutStrLn stderr $ "blocks: " ++ show blocks
+                 (s',ps) <- foldM evalBlock (s, []) blocks
+                 hPutStrLn stderr $ "patterns: " ++ show ps
+                 (sDirt s) (stack ps)
+                 putMVar mvS s'
      return ()
 
 evalBlock :: (State, [ParamPattern]) -> (Int, Code) -> IO (State, [ParamPattern])
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
+                                  id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
+                              liftIO $ hPutStrLn stderr $ "code: " ++ code
                               response <- liftIO $ takeMVar (sHintOut s)
+                              liftIO $ hPutStrLn stderr $ "result: " ++ show response
+                              
                               let block = fromJust $ lBlock $ (sCode s) !! n
-                                  (block', ps') = act response block
+                                  (block', ps') = act id response block
                                   s' = setBlock n block'
                               return (s', ps')
-  where act (HintOK p) b = (b {bStatus = Success, bModified = False}, p:ps)
-        act (HintError err) b = (b {bStatus = Error}, ps)
+  where act id (HintOK p) b = (b {bStatus = Success, bModified = False}, (p # orbit (pure id)):ps)
+        act _ (HintError err) b = (b {bStatus = Error}, ps)
         setBlock n block = s {sCode = ls}
           where ls = sCode s
                 l = (ls !! n) {lBlock = Just block}
@@ -491,9 +506,9 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
 activeBlocks :: Int -> Code -> [(Int, Code)]
 activeBlocks _ [] = []
 activeBlocks n (l:ls) | not (hasChar l) = activeBlocks (n+1) ls
-                      | lActive l = (n,b):(activeBlocks (n+(length b)) ls')
+                      | lActive l = (n,b):(activeBlocks (n+(length b)+1) ls')
                       | otherwise = activeBlocks (n+1) ls
-  where b = takeWhile hasChar ls
+  where b = takeWhile hasChar (l:ls)
         ls' = drop (length b) ls
 
 {-
