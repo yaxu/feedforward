@@ -69,7 +69,8 @@ data State = State {sCode :: Code,
                     sDirt :: ParamPattern -> IO (),
                     sChangeSet :: ChangeSet,
                     sLogFH :: Handle,
-                    sRMS :: [[Float]]
+                    sRMS :: [[Float]],
+                    sScroll :: (Int,Int)
                    }
 
 offsetY = 2
@@ -185,13 +186,15 @@ draw mvS
        updateWindow (sWindow s) $ do
          (h,w) <- windowSize
          setColor (sColour s)
+
          let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
+--             info = printf " %dx%d" w h
          moveCursor 0 0
          setColor (sColourHilite s)
          drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
-         let blocks = activeBlocks 0 $ sCode s
+         let blocks = filter ((< (fromIntegral $ h-offsetY)) . fst) $ activeBlocks 0 $ sCode s
          mapM_ (drawRMS s w) blocks
-         mapM_ (drawLine s) $ zip (sCode s) [0 ..]
+         mapM_ (drawLine s) $ take (fromIntegral $ (h - offsetY) - 1) $ drop (fst $ sScroll s) $ zip (sCode s) [0 ..]
          goCursor s
          return ()
   where drawLine :: State -> (Line, Integer) -> Update ()
@@ -237,7 +240,8 @@ initState w fg bg warn mIn mOut d logFH
            sDirt = d,
            sChangeSet = [],
            sLogFH = logFH,
-           sRMS = [[0]]
+           sRMS = replicate 10 $ replicate 4 0,
+           sScroll = (0,0)
           }
 
 moveHome :: MVar State -> Curses ()
