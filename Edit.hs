@@ -73,8 +73,10 @@ data State = State {sCode :: Code,
                     sScroll :: (Int,Int)
                    }
 
-offsetY = 2
-offsetX = 3
+topMargin    = 1 :: Integer
+bottomMargin = 2 :: Integer
+leftMargin   = 3 :: Integer
+rightMargin  = 1 :: Integer
 
 {- Fires every time the content of the editor is changed. The changeObj
 is a {from, to, text, removed, origin} object containing information
@@ -178,53 +180,50 @@ deleteChange from to removed = Change {cFrom = from,
                                        cNewPos = from
                                       }
 
-goCursor state = moveCursor ((offsetY + (fromIntegral $ fst $ sPos state))-sY) (offsetX + (fromIntegral $ snd $ sPos state))
+goCursor state = moveCursor ((topMargin + (fromIntegral $ fst $ sPos state))-sY) ((leftMargin + (fromIntegral $ snd $ sPos state)) - sX)
   where sY = fromIntegral $ fst $ sScroll state
+        sX = fromIntegral $ snd $ sScroll state
 
-doScroll s (h,w) = do moveCursor 1 0
-                      drawString $ "sScroll " ++ show sy' ++ "x" ++ show sx'
-                      return $ s {sScroll = (sy',sx')}
+doScroll s (h,w) = s {sScroll = (sy',sx')}
   where (y,x) = sPos s
         (sy,sx) = sScroll s
-        h' = h - offsetY
+        h' = h - (topMargin + bottomMargin)
+        w' = w - (leftMargin + rightMargin)
         sy' | y < sy = y
             | y >= sy + (fromIntegral h') = (y - (fromIntegral h')) + 1
             | otherwise = sy
-        sx' = 0
-
-{-
-doScroll' (sy,sx) (y,x) (h,w) = (sy',sx')
-  where h' = h - offsetY
-        sy' | y < sy = y
-            | y >= sy + (fromIntegral h') = (y - (fromIntegral h')) + 1
-            | otherwise = sy 
-       sx' = 0
--}
+        sx' | x < sx = x
+            | x >= sx + (fromIntegral w') = (x - (fromIntegral w')) + 1
+            | otherwise = sx
 
 draw :: MVar State -> Curses ()
 draw mvS
-  = do s' <- (liftIO $ readMVar mvS)
-       updateWindow (sWindow s') $ do
+  = do s <- (liftIO $ takeMVar mvS)
+       s'' <- updateWindow (sWindow s) $ do
          clear
          (h,w) <- windowSize
-         s <- doScroll s' (h,w)
-         setColor (sColour s)
+         let s' = doScroll s (h,w)
+         setColor (sColour s')
 
          -- header
+         {-
          let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
              -- info = printf " %dx%d" w h
          moveCursor 0 0
          setColor (sColourHilite s)
          drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
+         -}
          
-         -- let blocks = filter ((< (fromIntegral $ h-offsetY)) . fst) $ activeBlocks 0 $ sCode s
+         -- let blocks = filter ((< (fromIntegral $ h-topMargin)) . fst) $ activeBlocks 0 $ sCode s
          -- mapM_ (drawRMS s w) blocks
-         mapM_ (drawLine s) $ zip [offsetY..] $ take (fromIntegral $ (h - offsetY) ) $ drop (fst $ sScroll s) $ zip (sCode s) [0 ..]
-         goCursor s
-         return ()
-  where drawLine :: State -> (Integer, (Line, Integer)) -> Update ()
-        drawLine s (y, (l, n)) =
-          do moveCursor y offsetX
+         mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ zip (sCode s) [0 ..]
+         goCursor s'
+         return s'
+       liftIO $ putMVar mvS s''
+  where drawLine :: State -> Integer -> (Integer, (Line, Integer)) -> Update ()
+        drawLine s w (y, (l, n)) =
+          do let t = take (fromIntegral $ w - (leftMargin + rightMargin)) $ drop (snd $ sScroll s) $ lText l
+             moveCursor y leftMargin
 {-             if elem (fromIntegral n) (snd $ sHilite s)
                then setColor (if (fst $ sHilite s)
                               then sColourHilite s
@@ -233,22 +232,24 @@ draw mvS
                else setColor (sColour s)
 -}
              setColor (sColour s)
-             drawString (lText l)
+             drawString t
              moveCursor y 0
              drawString str
+             drawRMS s w (y-1) l
                where str | isJust (lTag l) = (show $ fromJust (lTag l)) ++ "|"
                          | hasChar l = " |"
                          | otherwise = ""
-        drawRMS s w (y,ls) = do let rmsw = ((fromIntegral w) / 2)
-                                    id = fromJust $ lTag $ head ls
-                                    rms = map ((min rmsw) . (1000 *)) $ map (!! id) (sRMS s) 
-                                    chars = "█▓▒░"
-                                    sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
-                                    bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
-                                    str = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
-                                setColor (sColour s)
-                                moveCursor (fromIntegral y + offsetY - 1) 0
-                                drawString $ (reverse str) ++ str
+        drawRMS s w y l | lActive l = do let rmsw = ((fromIntegral w) / 2)
+                                             id = fromJust $ lTag l
+                                             rms = map ((min rmsw) . (1000 *)) $ map (!! id) (sRMS s) 
+                                             chars = "█▓▒░"
+                                             sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
+                                             bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
+                                             str = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
+                                         setColor (sColour s)
+                                         moveCursor (fromIntegral y + topMargin - 1) 0
+                                         drawString $ (reverse str) ++ str
+                        | otherwise = return ()
 
 initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
 initState w fg bg warn mIn mOut d logFH
@@ -394,7 +395,7 @@ keyCtrl mvS 'x' = eval mvS
 
 keyCtrl mvS _ = return ()
 
-mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-offsetY) 0),fromIntegral (max (x-offsetX) 0))
+mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-topMargin) 0),fromIntegral (max (x-leftMargin) 0))
 mouse _ _ = return ()
 
 {-
@@ -502,7 +503,7 @@ eval :: MVar State -> Curses ()
 eval mvS = 
   do s <- (liftIO $ takeMVar mvS)
      let blocks = activeBlocks 0 $ sCode s
-     
+     liftIO $ hPutStrLn stderr $ "eval"
      liftIO $ do (s',ps) <- foldM evalBlock (s, []) blocks
                  (sDirt s) (stack ps)
                  putMVar mvS s'
