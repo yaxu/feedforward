@@ -178,28 +178,53 @@ deleteChange from to removed = Change {cFrom = from,
                                        cNewPos = from
                                       }
 
-goCursor state = moveCursor (offsetY + (fromIntegral $ fst $ sPos state)) (offsetX + (fromIntegral $ snd $ sPos state))
+goCursor state = moveCursor ((offsetY + (fromIntegral $ fst $ sPos state))-sY) (offsetX + (fromIntegral $ snd $ sPos state))
+  where sY = fromIntegral $ fst $ sScroll state
+
+doScroll s (h,w) = do moveCursor 1 0
+                      drawString $ "sScroll " ++ show sy' ++ "x" ++ show sx'
+                      return $ s {sScroll = (sy',sx')}
+  where (y,x) = sPos s
+        (sy,sx) = sScroll s
+        h' = h - offsetY
+        sy' | y < sy = y
+            | y >= sy + (fromIntegral h') = (y - (fromIntegral h')) + 1
+            | otherwise = sy
+        sx' = 0
+
+{-
+doScroll' (sy,sx) (y,x) (h,w) = (sy',sx')
+  where h' = h - offsetY
+        sy' | y < sy = y
+            | y >= sy + (fromIntegral h') = (y - (fromIntegral h')) + 1
+            | otherwise = sy 
+       sx' = 0
+-}
 
 draw :: MVar State -> Curses ()
 draw mvS
-  = do s <- (liftIO $ readMVar mvS)
-       updateWindow (sWindow s) $ do
+  = do s' <- (liftIO $ readMVar mvS)
+       updateWindow (sWindow s') $ do
+         clear
          (h,w) <- windowSize
+         s <- doScroll s' (h,w)
          setColor (sColour s)
 
+         -- header
          let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
---             info = printf " %dx%d" w h
+             -- info = printf " %dx%d" w h
          moveCursor 0 0
          setColor (sColourHilite s)
          drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
-         let blocks = filter ((< (fromIntegral $ h-offsetY)) . fst) $ activeBlocks 0 $ sCode s
-         mapM_ (drawRMS s w) blocks
-         mapM_ (drawLine s) $ take (fromIntegral $ (h - offsetY) - 1) $ drop (fst $ sScroll s) $ zip (sCode s) [0 ..]
+         
+         -- let blocks = filter ((< (fromIntegral $ h-offsetY)) . fst) $ activeBlocks 0 $ sCode s
+         -- mapM_ (drawRMS s w) blocks
+         mapM_ (drawLine s) $ zip [offsetY..] $ take (fromIntegral $ (h - offsetY) ) $ drop (fst $ sScroll s) $ zip (sCode s) [0 ..]
          goCursor s
          return ()
-  where drawLine :: State -> (Line, Integer) -> Update ()
-        drawLine s (l, n) =
-          do moveCursor (n + offsetY) offsetX
+  where drawLine :: State -> (Integer, (Line, Integer)) -> Update ()
+        drawLine s (y, (l, n)) =
+          do moveCursor y offsetX
 {-             if elem (fromIntegral n) (snd $ sHilite s)
                then setColor (if (fst $ sHilite s)
                               then sColourHilite s
@@ -209,7 +234,7 @@ draw mvS
 -}
              setColor (sColour s)
              drawString (lText l)
-             moveCursor (n + offsetY) 0
+             moveCursor y 0
              drawString str
                where str | isJust (lTag l) = (show $ fromJust (lTag l)) ++ "|"
                          | hasChar l = " |"
