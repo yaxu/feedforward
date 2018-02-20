@@ -74,7 +74,7 @@ data State = State {sCode :: Code,
                     sDirt :: ParamPattern -> IO (),
                     sChangeSet :: ChangeSet,
                     sLogFH :: Handle,
-                    sRMS :: [[Float]],
+                    sRMS :: [Float],
                     sScroll :: (Int,Int),
                     sCpsUtils :: CpsUtils
                    }
@@ -207,11 +207,21 @@ drawFooter s =
   do mc <- maxColor
      updateWindow (sWindow s) $
        do (h,w) <- windowSize
-          moveCursor (h-1) 0
-          drawString $ "max: " ++ show mc
+          moveCursor (h-2) 0
+          setColor $ sColourHilite s
+          let str = " " ++ show (sPos s)
+          drawString $ str ++ replicate ((fromIntegral w) - (length str)) ' '
 -- ▄▖
 -- ▀▘
 -- █▌
+
+lrChar :: Bool -> Bool -> Char
+lrChar True False = '▀'
+lrChar False True = '▄'
+lrChar True True = '█'
+lrChar False False = ' '
+
+rmsBlocks = " ▁▂▃▄▅▆▇█"
 
 draw :: MVar State -> Curses ()
 draw mvS
@@ -257,57 +267,62 @@ draw mvS
              setColor $ sColour s
              lineHead
              drawRMS s w (y-1) l
-               where lineHead | isJust (lTag l) = do let c | lStatus l == (Just Error) = sColourWarn s
-                                                           | lStatus l == (Just Success) = sColourHilite s
-                                                           | otherwise = sColour s
-                                                     -- setAttribute AttributeBold True
+               where lineHead | isJust (lTag l) = do let c | lStatus l == (Just Error) = setColor $ sColourWarn s
+                                                           | lStatus l == (Just Success) = setAttribute AttributeBold True
+                                                           | otherwise = setColor $ sColour s
+                                                     
                                                      moveCursor y 0
-                                                     setColor $ c
+                                                     c
                                                      drawString $ (show $ fromJust (lTag l))
+                                                     setAttribute AttributeBold False
                                                      setColor $ sColour s
                                                      drawString "│"
                               | hasChar l = do setColor $ sColour s
                                                moveCursor y 0
                                                drawString " │"
                               | otherwise = return ()
-        drawRMS s w y l | lActive l = do let rmsw = ((fromIntegral w) / 2)
+        drawRMS s w y l | lActive l = do let rmsMax = (length rmsBlocks) - 1
                                              id = fromJust $ lTag l
-                                             rmsL = map ((min rmsw) . (1000 *)) $ map (!! (id*2)) (sRMS s) 
-                                             rmsR = map ((min rmsw) . (1000 *)) $ map (!! (id*2+1)) (sRMS s) 
-                                             chars = "█▓▒░"
-                                             sizesL = map (\(s,e) -> (e-s)) $ zip (0:rmsL) rmsL
-                                             sizesR = map (\(s,e) -> (e-s)) $ zip (0:rmsR) rmsR
-                                             barL = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizesL chars
-                                             barR = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizesR chars
-                                             chan1 = barL ++ (replicate ((floor rmsw) - (length barL)) ' ')
-                                             chan2 = barR ++ (replicate ((floor rmsw) - (length barR)) ' ')
-                                             stereo = (reverse chan1) ++ chan2
-                                             str | (length stereo) < (fromIntegral w) = ' ':stereo
-                                                 | otherwise = stereo
+                                             rmsL = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2))
+                                             rmsR = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2+1))
+                                             str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
                                          setColor (sColour s)
                                          moveCursor (fromIntegral y + topMargin - 1) 0
                                          drawString $ str
                         | otherwise = return ()
 
-initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> CpsUtils -> State
-initState w fg bg warn mIn mOut d logFH cpsUtils
-  = State {sCode = [Line (Just $ Block 0 True True Normal) "sound \"bd sn\""],
-           sPos = (0,0),
-           sWindow = w,
-           sXWarp = 0,
-           sColour = fg,
-           sColourHilite = bg,
-           sColourWarn = warn,
-           -- sHilite = (False, []),
-           sHintIn = mIn,
-           sHintOut = mOut,
-           sDirt = d,
-           sChangeSet = [],
-           sLogFH = logFH,
-           sRMS = replicate 20 $ replicate 4 0,
-           sScroll = (0,0),
-           sCpsUtils = cpsUtils
-          }
+initState :: Curses (MVar State)
+initState
+  = do w <- defaultWindow
+       updateWindow w clear
+       fg <- newColorID ColorWhite ColorDefault 1
+       bg <- newColorID ColorBlack ColorWhite 2
+       warn <- newColorID ColorWhite ColorRed 3
+       mIn <- liftIO newEmptyMVar
+       mOut <- liftIO newEmptyMVar
+       liftIO $ forkIO $ hintJob (mIn, mOut)
+       (_, getNow) <- liftIO cpsUtils
+       cpsUtils <- liftIO cpsUtils'
+       (d, _) <- liftIO (dirtSetters getNow)
+       logFH <- liftIO openLog
+       mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal) "sound \"bd sn\""],
+                                        sPos = (0,0),
+                                        sWindow = w,
+                                        sXWarp = 0,
+                                        sColour = fg,
+                                        sColourHilite = bg,
+                                        sColourWarn = warn,
+                                        -- sHilite = (False, []),
+                                        sHintIn = mIn,
+                                        sHintOut = mOut,
+                                        sDirt = d,
+                                        sChangeSet = [],
+                                        sLogFH = logFH,
+                                        sRMS = replicate 20 0,
+                                        sScroll = (0,0),
+                                        sCpsUtils = cpsUtils
+                                       }
+       return mvS
 
 moveHome :: MVar State -> Curses ()
 moveHome mvS = do s <- liftIO (readMVar mvS)
@@ -371,29 +386,13 @@ listenRMS mvS = do x <- udpServer "127.0.0.1" 6010
          loop x
     act (Just m) = do let xs = map (fromMaybe 0 . datum_floating) $ messageDatum m
                       s <- takeMVar mvS
-                      putMVar mvS $ s {sRMS = xs:(take 3 $ sRMS s)}
+                      putMVar mvS $ s {sRMS = xs}
     act _ = return ()
 
 main :: IO ()
 main = do runCurses $ do
             setEcho False
-            w <- defaultWindow
-            updateWindow w clear
-            cdc <- canDefineColor
-            if cdc
-              then defineColor (Color 0) 0 0 0
-              else return ()
-            fg <- newColorID ColorWhite ColorDefault 1
-            bg <- newColorID ColorBlack ColorWhite 2
-            warn <- newColorID ColorWhite ColorRed 3
-            mIn <- liftIO newEmptyMVar
-            mOut <- liftIO newEmptyMVar
-            liftIO $ forkIO $ hintJob (mIn, mOut)
-            (_, getNow) <- liftIO cpsUtils
-            cpsUtils <- liftIO cpsUtils'
-            (d, _) <- liftIO (dirtSetters getNow)
-            logFH <- liftIO openLog
-            mvS <- (liftIO $ newMVar $ initState w fg bg warn mIn mOut d logFH cpsUtils)
+            mvS <- initState
             liftIO $ forkIO $ listenRMS mvS
             draw mvS
             render
