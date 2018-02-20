@@ -368,7 +368,11 @@ main = do runCurses $ do
             setEcho False
             w <- defaultWindow
             updateWindow w clear
-            fg <- newColorID ColorWhite ColorBlack 1
+            cdc <- canDefineColor
+            if cdc
+              then defineColor (Color 0) 0 0 0
+              else return ()
+            fg <- newColorID ColorWhite ColorDefault 1
             bg <- newColorID ColorBlack ColorWhite 2
             warn <- newColorID ColorWhite ColorRed 3
             mIn <- liftIO newEmptyMVar
