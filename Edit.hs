@@ -15,7 +15,7 @@ import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Time.Format
 import Sound.OSC.FD
-import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils, stack, orbit, (#))
+import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils, stack, orbit, (#), cpsUtils')
 import System.Directory
 import System.FilePath
 import System.IO
@@ -59,6 +59,7 @@ setTag l@(Line {lBlock = Nothing}) tag = l {lBlock = Just (Block {bTag = tag, bA
 
 type Code = [Line]
 type Pos = (Int, Int)
+type CpsUtils = ((Double -> IO (), (Double -> IO ()), IO Rational))
 
 data State = State {sCode :: Code,
                     sPos :: Pos,
@@ -74,7 +75,8 @@ data State = State {sCode :: Code,
                     sChangeSet :: ChangeSet,
                     sLogFH :: Handle,
                     sRMS :: [[Float]],
-                    sScroll :: (Int,Int)
+                    sScroll :: (Int,Int),
+                    sCpsUtils :: CpsUtils
                    }
 
 topMargin    = 1 :: Integer
@@ -200,6 +202,17 @@ doScroll s (h,w) = s {sScroll = (sy',sx')}
             | x >= sx + (fromIntegral w') = (x - (fromIntegral w')) + 1
             | otherwise = sx
 
+drawFooter :: State -> Curses ()
+drawFooter s =
+  do mc <- maxColor
+     updateWindow (sWindow s) $
+       do (h,w) <- windowSize
+          moveCursor (h-1) 0
+          drawString $ "max: " ++ show mc
+-- ▄▖
+-- ▀▘
+-- █▌
+
 draw :: MVar State -> Curses ()
 draw mvS
   = do s <- (liftIO $ takeMVar mvS)
@@ -208,19 +221,10 @@ draw mvS
          (h,w) <- windowSize
          let s' = doScroll s (h,w)
          setColor (sColour s')
-
-         -- header
-         {-
-         let spaces = ((fromIntegral w) - (length "feedforward")) `div` 2
-             -- info = printf " %dx%d" w h
-         moveCursor 0 0
-         setColor (sColourHilite s)
-         drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
-         -}
-         
          mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ zip (sCode s) [0 ..]
-         goCursor s'
          return s'
+       drawFooter s''
+       updateWindow (sWindow s) $ goCursor s''
        liftIO $ putMVar mvS s''
   where drawLine :: State -> Integer -> (Integer, (Line, Integer)) -> Update ()
         drawLine s w (y, (l, n)) =
@@ -257,30 +261,36 @@ draw mvS
                                                            | lStatus l == (Just Success) = sColourHilite s
                                                            | otherwise = sColour s
                                                      -- setAttribute AttributeBold True
-                                                     setColor $ c
                                                      moveCursor y 0
-                                                     drawString $ (show $ fromJust (lTag l)) ++ ":"
+                                                     setColor $ c
+                                                     drawString $ (show $ fromJust (lTag l))
+                                                     setColor $ sColour s
+                                                     drawString "│"
                               | hasChar l = do setColor $ sColour s
                                                moveCursor y 0
-                                               drawString " |"
+                                               drawString " │"
                               | otherwise = return ()
         drawRMS s w y l | lActive l = do let rmsw = ((fromIntegral w) / 2)
                                              id = fromJust $ lTag l
-                                             rms = map ((min rmsw) . (1000 *)) $ map (!! id) (sRMS s) 
+                                             rmsL = map ((min rmsw) . (1000 *)) $ map (!! (id*2)) (sRMS s) 
+                                             rmsR = map ((min rmsw) . (1000 *)) $ map (!! (id*2+1)) (sRMS s) 
                                              chars = "█▓▒░"
-                                             sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
-                                             bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
-                                             chan1 = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
-                                             fakeStereo = (reverse chan1) ++ chan1
-                                             str | (length fakeStereo) < (fromIntegral w) = ' ':fakeStereo
-                                                 | otherwise = fakeStereo
+                                             sizesL = map (\(s,e) -> (e-s)) $ zip (0:rmsL) rmsL
+                                             sizesR = map (\(s,e) -> (e-s)) $ zip (0:rmsR) rmsR
+                                             barL = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizesL chars
+                                             barR = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizesR chars
+                                             chan1 = barL ++ (replicate ((floor rmsw) - (length barL)) ' ')
+                                             chan2 = barR ++ (replicate ((floor rmsw) - (length barR)) ' ')
+                                             stereo = (reverse chan1) ++ chan2
+                                             str | (length stereo) < (fromIntegral w) = ' ':stereo
+                                                 | otherwise = stereo
                                          setColor (sColour s)
                                          moveCursor (fromIntegral y + topMargin - 1) 0
                                          drawString $ str
                         | otherwise = return ()
 
-initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
-initState w fg bg warn mIn mOut d logFH
+initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> CpsUtils -> State
+initState w fg bg warn mIn mOut d logFH cpsUtils
   = State {sCode = [Line (Just $ Block 0 True True Normal) "sound \"bd sn\""],
            sPos = (0,0),
            sWindow = w,
@@ -294,8 +304,9 @@ initState w fg bg warn mIn mOut d logFH
            sDirt = d,
            sChangeSet = [],
            sLogFH = logFH,
-           sRMS = replicate 10 $ replicate 4 0,
-           sScroll = (0,0)
+           sRMS = replicate 20 $ replicate 4 0,
+           sScroll = (0,0),
+           sCpsUtils = cpsUtils
           }
 
 moveHome :: MVar State -> Curses ()
@@ -379,9 +390,10 @@ main = do runCurses $ do
             mOut <- liftIO newEmptyMVar
             liftIO $ forkIO $ hintJob (mIn, mOut)
             (_, getNow) <- liftIO cpsUtils
+            cpsUtils <- liftIO cpsUtils'
             (d, _) <- liftIO (dirtSetters getNow)
             logFH <- liftIO openLog
-            mvS <- (liftIO $ newMVar $ initState w fg bg warn mIn mOut d logFH)
+            mvS <- (liftIO $ newMVar $ initState w fg bg warn mIn mOut d logFH cpsUtils)
             liftIO $ forkIO $ listenRMS mvS
             draw mvS
             render
