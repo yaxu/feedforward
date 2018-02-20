@@ -27,7 +27,7 @@ import Text.Printf
 type Tag = Int
 
 data Status = Success | Error | Normal
-            deriving Show
+            deriving (Show, Eq)
 
 data Block = Block {bTag :: Tag,
                     bActive :: Bool,
@@ -48,6 +48,10 @@ lTag l = do block <- lBlock l
 lActive :: Line -> Bool
 lActive (Line {lBlock = Just (Block {bActive = a})}) = a
 lActive _ = False
+
+lStatus :: Line -> Maybe Status
+lStatus l = do block <- lBlock l
+               return $ bStatus block
 
 setTag :: Line -> Tag -> Line
 setTag l@(Line {lBlock = (Just b)}) tag = l {lBlock = Just (b {bTag = tag})}
@@ -76,7 +80,7 @@ data State = State {sCode :: Code,
 topMargin    = 1 :: Integer
 bottomMargin = 2 :: Integer
 leftMargin   = 3 :: Integer
-rightMargin  = 1 :: Integer
+rightMargin  = 0 :: Integer
 
 {- Fires every time the content of the editor is changed. The changeObj
 is a {from, to, text, removed, origin} object containing information
@@ -214,15 +218,16 @@ draw mvS
          drawString $ (replicate spaces ' ') ++ "feedforward" ++ (replicate ((fromIntegral w) - spaces - (length "feedforward")) ' ')
          -}
          
-         -- let blocks = filter ((< (fromIntegral $ h-topMargin)) . fst) $ activeBlocks 0 $ sCode s
-         -- mapM_ (drawRMS s w) blocks
          mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ zip (sCode s) [0 ..]
          goCursor s'
          return s'
        liftIO $ putMVar mvS s''
   where drawLine :: State -> Integer -> (Integer, (Line, Integer)) -> Update ()
         drawLine s w (y, (l, n)) =
-          do let t = take (fromIntegral $ w - (leftMargin + rightMargin)) $ drop (snd $ sScroll s) $ lText l
+          do let scrollX = snd $ sScroll s
+                 skipLeft = drop scrollX $ lText l
+                 skipBoth = take (fromIntegral $ w - (leftMargin + rightMargin + 1)) $ skipLeft
+
              moveCursor y leftMargin
 {-             if elem (fromIntegral n) (snd $ sHilite s)
                then setColor (if (fst $ sHilite s)
@@ -232,23 +237,46 @@ draw mvS
                else setColor (sColour s)
 -}
              setColor (sColour s)
-             drawString t
+             drawString skipBoth
+
+             setColor $ sColourHilite s
+             if scrollX > 0
+               then do moveCursor y leftMargin
+                       drawString "<"
+               else return ()
+             if length skipLeft > length skipBoth
+                then do moveCursor y (w-1)
+                        drawString ">"
+               else return ()
+                    
              moveCursor y 0
-             drawString str
+             setColor $ sColour s
+             lineHead
              drawRMS s w (y-1) l
-               where str | isJust (lTag l) = (show $ fromJust (lTag l)) ++ "|"
-                         | hasChar l = " |"
-                         | otherwise = ""
+               where lineHead | isJust (lTag l) = do let c | lStatus l == (Just Error) = sColourWarn s
+                                                           | lStatus l == (Just Success) = sColourHilite s
+                                                           | otherwise = sColour s
+                                                     -- setAttribute AttributeBold True
+                                                     setColor $ c
+                                                     moveCursor y 0
+                                                     drawString $ (show $ fromJust (lTag l)) ++ ":"
+                              | hasChar l = do setColor $ sColour s
+                                               moveCursor y 0
+                                               drawString " |"
+                              | otherwise = return ()
         drawRMS s w y l | lActive l = do let rmsw = ((fromIntegral w) / 2)
                                              id = fromJust $ lTag l
                                              rms = map ((min rmsw) . (1000 *)) $ map (!! id) (sRMS s) 
                                              chars = "█▓▒░"
                                              sizes = map (\(s,e) -> (e-s)) $ zip (0:rms) rms
                                              bar = concatMap (\(sz,c) -> replicate (floor sz) c) $ zip sizes chars
-                                             str = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
+                                             chan1 = bar ++ (replicate ((floor rmsw) - (length bar)) ' ')
+                                             fakeStereo = (reverse chan1) ++ chan1
+                                             str | (length fakeStereo) < (fromIntegral w) = ' ':fakeStereo
+                                                 | otherwise = fakeStereo
                                          setColor (sColour s)
                                          moveCursor (fromIntegral y + topMargin - 1) 0
-                                         drawString $ (reverse str) ++ str
+                                         drawString $ str
                         | otherwise = return ()
 
 initState :: Window -> ColorID -> ColorID -> ColorID -> MVar String -> MVar Response -> (ParamPattern -> IO ()) -> Handle -> State
@@ -342,7 +370,7 @@ main = do runCurses $ do
             updateWindow w clear
             fg <- newColorID ColorWhite ColorBlack 1
             bg <- newColorID ColorBlack ColorWhite 2
-            warn <- newColorID ColorRed ColorBlack 3
+            warn <- newColorID ColorWhite ColorRed 3
             mIn <- liftIO newEmptyMVar
             mOut <- liftIO newEmptyMVar
             liftIO $ forkIO $ hintJob (mIn, mOut)
@@ -518,10 +546,12 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act id response block
                                   s' = setBlock n block'
+                              hPutStrLn stderr $ show $ block'
+                              hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id (HintOK p) b = (b {bStatus = Success, bModified = False}, (p # orbit (pure id)):ps)
         act _ (HintError err) b = (b {bStatus = Error}, ps)
-        setBlock n block = s {sCode = ls}
+        setBlock n block = s {sCode = ls'}
           where ls = sCode s
                 l = (ls !! n) {lBlock = Just block}
                 ls' = take n ls ++ (l:(drop (n+1) ls))
