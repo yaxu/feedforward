@@ -42,6 +42,11 @@ data Line = Line {lBlock :: Maybe Block,
                  }
              deriving Show
 
+data Dirt = Classic | Super
+          deriving Eq
+
+dirt = Super
+
 lTag :: Line -> Maybe Tag
 lTag l = do block <- lBlock l
             return $ bTag block
@@ -62,10 +67,13 @@ type Code = [Line]
 type Pos = (Int, Int)
 type CpsUtils = ((Double -> IO (), (Double -> IO ()), IO Rational))
 
+data Mode = EditMode | FileMode | PlaybackMode
+
 data State = State {sCode :: Code,
                     sPos :: Pos,
                     sXWarp :: Int,
-                    sWindow :: Window,
+                    sEditWindow :: Window,
+                    sFileWindow :: Window,
                     sColour :: ColorID,
                     sColourHilite :: ColorID,
                     sColourWarn :: ColorID,
@@ -76,7 +84,9 @@ data State = State {sCode :: Code,
                     sLogFH :: Handle,
                     sRMS :: [Float],
                     sScroll :: (Int,Int),
-                    sCpsUtils :: CpsUtils
+                    sCpsUtils :: CpsUtils,
+                    sMode :: Mode
+                    -- sFileSel :: (Maybe Int, Maybe Int, Maybe Int)
                    }
 
 topMargin    = 1 :: Integer
@@ -205,7 +215,7 @@ doScroll s (h,w) = s {sScroll = (sy',sx')}
 drawFooter :: State -> Curses ()
 drawFooter s =
   do mc <- maxColor
-     updateWindow (sWindow s) $
+     updateWindow (sEditWindow s) $
        do (h,w) <- windowSize
           moveCursor (h-2) 0
           setColor $ sColourHilite s
@@ -217,7 +227,7 @@ rmsBlocks = " ▁▂▃▄▅▆▇█"
 draw :: MVar State -> Curses ()
 draw mvS
   = do s <- (liftIO $ takeMVar mvS)
-       s'' <- updateWindow (sWindow s) $ do
+       s'' <- updateWindow (sEditWindow s) $ do
          clear
          (h,w) <- windowSize
          let s' = doScroll s (h,w)
@@ -225,7 +235,7 @@ draw mvS
          mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ zip (sCode s) [0 ..]
          return s'
        drawFooter s''
-       updateWindow (sWindow s) $ goCursor s''
+       updateWindow (sEditWindow s) $ goCursor s''
        liftIO $ putMVar mvS s''
   where drawLine :: State -> Integer -> (Integer, (Line, Integer)) -> Update ()
         drawLine s w (y, (l, n)) =
@@ -281,16 +291,21 @@ initState
        fg <- newColorID ColorWhite ColorDefault 1
        bg <- newColorID ColorBlack ColorWhite 2
        warn <- newColorID ColorWhite ColorRed 3
+       fileWindow <- newWindow 10 20 3 3
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
        (_, getNow) <- liftIO cpsUtils
        cpsUtils <- liftIO cpsUtils'
-       (d, _) <- liftIO (dirtSetters getNow)
+       let setters = case dirt of
+                      Classic -> dirtSetters
+                      Super -> superDirtSetters
+       (d, _) <- liftIO (setters getNow)
        logFH <- liftIO openLog
        mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal) "sound \"bd sn\""],
                                         sPos = (0,0),
-                                        sWindow = w,
+                                        sEditWindow = w,
+                                        sFileWindow = fileWindow,
                                         sXWarp = 0,
                                         sColour = fg,
                                         sColourHilite = bg,
@@ -303,7 +318,8 @@ initState
                                         sLogFH = logFH,
                                         sRMS = replicate 20 0,
                                         sScroll = (0,0),
-                                        sCpsUtils = cpsUtils
+                                        sCpsUtils = cpsUtils,
+                                        sMode = EditMode
                                        }
        return mvS
 
@@ -360,17 +376,32 @@ writeLog s c = do hPutStrLn (sLogFH s) (show c)
                   hFlush (sLogFH s)
 
 listenRMS :: MVar State -> IO ()
-listenRMS mvS = do x <- udpServer "127.0.0.1" 6010
-                   loop x
+listenRMS mvS = do udp <- udpServer "127.0.0.1" 6010
+                   subscribe udp
+                   loop udp
   where
-    loop x = 
-      do m <- recvMessage x
+    loop udp = 
+      do m <- recvMessage udp
          act m
-         loop x
-    act (Just m) = do let xs = map (fromMaybe 0 . datum_floating) $ messageDatum m
-                      s <- takeMVar mvS
-                      putMVar mvS $ s {sRMS = xs}
+         loop udp
+    act (Just (m@(Message "/rmsall" _))) =
+      do let xs = map (fromMaybe 0 . datum_floating) $ messageDatum m
+         s <- takeMVar mvS
+         putMVar mvS $ s {sRMS = xs}
+    act (Just (m@(Message "/rms" _))) =
+      do s <- takeMVar mvS
+         let orbit = fromMaybe 0 $ datum_integral $ messageDatum m !! 1
+             l = fromMaybe 0 $ datum_floating $ messageDatum m !! 3
+             r = fromMaybe 0 $ datum_floating $ messageDatum m !! 5
+             rms = sRMS s
+             rms' = take (orbit*2) rms ++ [l,r] ++ drop ((orbit*2)+2) rms
+         putMVar mvS $ s {sRMS = rms'}
     act _ = return ()
+    subscribe udp | dirt == Super =
+                      do remote_addr <- N.inet_addr "127.0.0.1"
+                         let remote_sockaddr = N.SockAddrInet 57110 remote_addr
+                         sendTo udp (Message "/notify" [int32 1]) remote_sockaddr
+                  | otherwise = return ()
 
 main :: IO ()
 main = do runCurses $ do
@@ -381,28 +412,57 @@ main = do runCurses $ do
             render
             mainLoop mvS
 
+
+handleEv mvS EditMode ev =
+  do let quit = return True
+         ok = return False
+     case ev of
+      Nothing -> ok
+      Just (EventCharacter x) -> if x == chr(27)
+                                 then quit
+                                 else keypress mvS x >> ok
+      Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> ok
+      Just (EventSpecialKey KeyDownArrow) -> move mvS (1,0) >> ok
+      Just (EventSpecialKey KeyLeftArrow) -> move mvS (0,-1) >> ok
+      Just (EventSpecialKey KeyRightArrow) -> move mvS (0,1) >> ok
+      Just (EventSpecialKey KeyHome) -> moveHome mvS >> ok
+      Just (EventSpecialKey KeyEnd) -> moveEnd mvS >> ok
+      Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> ok
+      Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> ok
+      Just (EventSpecialKey KeyBackspace) -> backspace mvS >> ok
+      Just (EventMouse _ ms) -> mouse mvS ms >> ok
+      Just e -> do liftIO $ hPutStrLn stderr $ show e
+                   ok
+
+handleEv mvS FileMode ev =
+  do let quit :: Curses Bool
+         quit = return True
+         ok :: Curses Bool
+         ok = return False
+     case ev of
+      Nothing -> ok
+      Just (EventCharacter x) -> if x == chr 27
+                                 then do s <- liftIO $ takeMVar mvS
+                                         liftIO $ putMVar mvS $ s {sMode = EditMode}
+                                         ok
+                                 else ok
+      Just e -> do liftIO $ hPutStrLn stderr $ show e
+                   ok
+
 mainLoop mvS = loop where
-  loop = do draw mvS
+  loop = do s <- liftIO (readMVar mvS)
+
+            case sMode s of
+             EditMode     -> draw mvS
+             FileMode     -> return ()
+             PlaybackMode -> return ()
             render
-            s <- liftIO (readMVar mvS)
-            ev <- getEvent (sWindow s) (Just 50)
-            case ev of
-             Nothing -> loop
-             Just (EventCharacter x) -> if x == chr(27)
-                                        then return ()
-                                        else keypress mvS x >> loop
-             Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> loop
-             Just (EventSpecialKey KeyDownArrow) -> move mvS (1,0) >> loop
-             Just (EventSpecialKey KeyLeftArrow) -> move mvS (0,-1) >> loop
-             Just (EventSpecialKey KeyRightArrow) -> move mvS (0,1) >> loop
-             Just (EventSpecialKey KeyHome) -> moveHome mvS >> loop
-             Just (EventSpecialKey KeyEnd) -> moveEnd mvS >> loop
-             Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> loop
-             Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> loop
-             Just (EventSpecialKey KeyBackspace) -> backspace mvS >> loop
-             Just (EventMouse _ ms) -> mouse mvS ms >> loop
-             Just e -> do liftIO $ hPutStrLn stderr $ show e
-                          loop
+             
+            ev <- getEvent (sEditWindow s) (Just 50)
+            done <- handleEv mvS (sMode s) ev
+            if done
+              then return ()
+              else loop
 
 -- emacs movement
 keyCtrl mvS 'a' = moveHome mvS
@@ -419,11 +479,13 @@ keyCtrl mvS 'j' = insertBreak mvS
 
 keyCtrl mvS 'x' = eval mvS
 
+keyCtrl mvS 'l' = fileMode mvS
+
 keyCtrl mvS _ = return ()
 
 {-
 keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
-                   updateWindow (sWindow s) $ do
+                   updateWindow (sEditWindow s) $ do
                      moveCursor 18 10
                      drawString $ show c
 -}
@@ -458,7 +520,7 @@ insertBreak mvS =
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let change = (insertChange (y,x) ["",""]) {cWhen = now}
      liftIO $ applyChange mvS (s {sXWarp = 0}) change
-     updateWindow (sWindow s) clear
+     updateWindow (sEditWindow s) clear
 
 insertChar :: MVar State -> Char -> Curses ()
 insertChar mvS c =
@@ -468,7 +530,7 @@ insertChar mvS c =
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
      let change = (insertChange (y,x) [[c]]) {cWhen = now}
      liftIO $ applyChange mvS (s {sXWarp = x'}) change
-     updateWindow (sWindow s) clear
+     updateWindow (sEditWindow s) clear
 
 backspaceChar :: State -> State
 backspaceChar s =
@@ -501,7 +563,7 @@ backspace mvS =
                                                    ) (y, x) ["", ""]
                                      ) {cWhen = now}
      liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
-     updateWindow (sWindow s) clear
+     updateWindow (sEditWindow s) clear
 
 del :: MVar State -> Curses ()
 del mvS =
@@ -512,7 +574,7 @@ del mvS =
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
      liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
-     updateWindow (sWindow s) clear
+     updateWindow (sEditWindow s) clear
 
 killLine :: MVar State -> Curses ()
 killLine mvS =
@@ -523,17 +585,31 @@ killLine mvS =
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
      liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
-     updateWindow (sWindow s) clear
+     updateWindow (sEditWindow s) clear
+
+fileMode :: MVar State -> Curses ()
+fileMode mvS = do s <- liftIO $ takeMVar mvS
+                  let s' = s {sMode = FileMode}
+                      fileWindow = sFileWindow s'
+                  updateWindow fileWindow $
+                    do clear
+                       (h,w) <- windowSize
+                       moveCursor 0 0
+                       drawString "File stuff goes here."
+                  liftIO $ hPutStrLn stderr $ "bah"
+                  liftIO $ putMVar mvS s'
 
 eval :: MVar State -> Curses ()
 eval mvS = 
   do s <- (liftIO $ takeMVar mvS)
      let blocks = activeBlocks 0 $ sCode s
-     liftIO $ hPutStrLn stderr $ "eval"
+     {- liftIO $ hPutStrLn stderr $ "eval"
      liftIO $ do (s',ps) <- foldM evalBlock (s, []) blocks
                  (sDirt s) (stack ps)
                  putMVar mvS s'
+     -}
      return ()
+
 
 evalBlock :: (State, [ParamPattern]) -> (Int, Code) -> IO (State, [ParamPattern])
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
