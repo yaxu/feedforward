@@ -565,7 +565,7 @@ activeBlocks n (l:ls) | not (hasChar l) = activeBlocks (n+1) ls
 
 scSub = do udp <- udpServer "127.0.0.1" 0
            remote_addr <- N.inet_addr "127.0.0.1"
-           let remote_sockaddr = N.SockAddrInet 57120 remote_addr
+           let remote_sockaddr = N.SockAddrInet 57110 remote_addr
            sendTo udp (Message "/notify" []) remote_sockaddr
            loop udp
   where loop udp = do m <- recvMessage udp
