@@ -23,6 +23,7 @@ import System.Posix.Process
 import TidalHint
 import UI.NCurses
 import Text.Printf
+import qualified Network.Socket as N
 
 type Tag = Int
 
@@ -68,7 +69,6 @@ data State = State {sCode :: Code,
                     sColour :: ColorID,
                     sColourHilite :: ColorID,
                     sColourWarn :: ColorID,
-                    -- sHilite :: (Bool, [Int]),
                     sHintIn :: MVar String,
                     sHintOut :: MVar Response,
                     sDirt :: ParamPattern -> IO (),
@@ -211,15 +211,6 @@ drawFooter s =
           setColor $ sColourHilite s
           let str = " " ++ show (sPos s)
           drawString $ str ++ replicate ((fromIntegral w) - (length str)) ' '
--- ▄▖
--- ▀▘
--- █▌
-
-lrChar :: Bool -> Bool -> Char
-lrChar True False = '▀'
-lrChar False True = '▄'
-lrChar True True = '█'
-lrChar False False = ' '
 
 rmsBlocks = " ▁▂▃▄▅▆▇█"
 
@@ -241,15 +232,7 @@ draw mvS
           do let scrollX = snd $ sScroll s
                  skipLeft = drop scrollX $ lText l
                  skipBoth = take (fromIntegral $ w - (leftMargin + rightMargin + 1)) $ skipLeft
-
              moveCursor y leftMargin
-{-             if elem (fromIntegral n) (snd $ sHilite s)
-               then setColor (if (fst $ sHilite s)
-                              then sColourHilite s
-                              else sColourWarn s
-                             )
-               else setColor (sColour s)
--}
              setColor (sColour s)
              drawString skipBoth
 
@@ -438,15 +421,15 @@ keyCtrl mvS 'x' = eval mvS
 
 keyCtrl mvS _ = return ()
 
-mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-topMargin) 0),fromIntegral (max (x-leftMargin) 0))
-mouse _ _ = return ()
-
 {-
 keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
                    updateWindow (sWindow s) $ do
                      moveCursor 18 10
                      drawString $ show c
 -}
+
+mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-topMargin) 0),fromIntegral (max (x-leftMargin) 0))
+mouse _ _ = return ()
 
 keypress mvS c | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
                | otherwise = insertChar mvS c
@@ -580,32 +563,11 @@ activeBlocks n (l:ls) | not (hasChar l) = activeBlocks (n+1) ls
   where b = takeWhile hasChar (l:ls)
         ls' = drop (length b) ls
 
-{-
-eval' :: MVar State -> Curses ()
-eval' mvS = 
-  do s <- (liftIO $ takeMVar mvS)
-     let (y,_) = sPos s
-         ls = sCode s
-         block | hasChar (ls !! y) = findBlock
-               | otherwise = []
-         findChars = takeWhile (hasChar . (ls !!))
-         pre = reverse $ findChars $ reverse [0 .. y]
-         post | y == ((length ls) - 1) = []
-              | otherwise = findChars [y+1 .. ((length ls) - 1)]
-         findBlock = pre ++ post
-         codeblock = intercalate "\n" (map (lText . (ls !!)) findBlock)
-     liftIO $ putMVar (sHintIn s) codeblock
-     response <- liftIO $ takeMVar (sHintOut s)
-     ok <- act s response
-     liftIO $ putMVar mvS $ s {sHilite = (ok, findBlock)}
-     draw mvS
-  where
-    act s (HintOK p) = do liftIO $ (sDirt s) p
-                          return True
-    act s (HintError err) =
-      do updateWindow (sWindow s) $ do
-           moveCursor 15 0
-           drawString $ show err
-         return False
-
--}
+scSub = do udp <- udpServer "127.0.0.1" 0
+           remote_addr <- N.inet_addr "127.0.0.1"
+           let remote_sockaddr = N.SockAddrInet 57120 remote_addr
+           sendTo udp (Message "/notify" []) remote_sockaddr
+           loop udp
+  where loop udp = do m <- recvMessage udp
+                      putStrLn $ show m
+                      loop udp
