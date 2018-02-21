@@ -433,21 +433,22 @@ handleEv mvS EditMode ev =
       Just (EventMouse _ ms) -> mouse mvS ms >> ok
       Just e -> do liftIO $ hPutStrLn stderr $ show e
                    ok
+handleEv mvS FileMode Nothing = ok
+handleEv mvS FileMode (Just (EventCharacter x))
+  | x == chr 27 = do s <- liftIO $ takeMVar mvS
+                     liftIO $ putMVar mvS $ s {sMode = EditMode}
+                     ok
+  | otherwise = ok
+                
+handleEv mvS FileMode (Just e) = do liftIO $ hPutStrLn stderr $ show e
+                                    ok
 
-handleEv mvS FileMode ev =
-  do let quit :: Curses Bool
-         quit = return True
-         ok :: Curses Bool
-         ok = return False
-     case ev of
-      Nothing -> ok
-      Just (EventCharacter x) -> if x == chr 27
-                                 then do s <- liftIO $ takeMVar mvS
-                                         liftIO $ putMVar mvS $ s {sMode = EditMode}
-                                         ok
-                                 else ok
-      Just e -> do liftIO $ hPutStrLn stderr $ show e
-                   ok
+
+quit :: Curses Bool
+quit = return True
+
+ok :: Curses Bool
+ok = return False
 
 mainLoop mvS = loop where
   loop = do s <- liftIO (readMVar mvS)
@@ -603,11 +604,10 @@ eval :: MVar State -> Curses ()
 eval mvS = 
   do s <- (liftIO $ takeMVar mvS)
      let blocks = activeBlocks 0 $ sCode s
-     {- liftIO $ hPutStrLn stderr $ "eval"
+     liftIO $ hPutStrLn stderr $ "eval"
      liftIO $ do (s',ps) <- foldM evalBlock (s, []) blocks
                  (sDirt s) (stack ps)
                  putMVar mvS s'
-     -}
      return ()
 
 
