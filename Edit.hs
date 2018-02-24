@@ -9,7 +9,7 @@ import Control.Concurrent.MVar
 import Control.Monad (foldM)
 import Control.Monad.IO.Class
 import Data.Char
-import Data.List (intercalate, (\\))
+import Data.List (intercalate, (\\), elemIndex, inits)
 import Data.Maybe (fromMaybe, catMaybes, isJust, fromJust)
 import Data.Time
 import Data.Time.Clock.POSIX
@@ -20,6 +20,7 @@ import System.Directory
 import System.FilePath
 import System.IO
 import System.Posix.Process
+import System.Posix.Signals
 import TidalHint
 import UI.NCurses
 import Text.Printf
@@ -33,7 +34,8 @@ data Status = Success | Error | Normal
 data Block = Block {bTag :: Tag,
                     bActive :: Bool,
                     bModified :: Bool,
-                    bStatus :: Status
+                    bStatus :: Status,
+                    bPattern :: Maybe ParamPattern
                    }
              deriving Show
 
@@ -61,7 +63,11 @@ lStatus l = do block <- lBlock l
 
 setTag :: Line -> Tag -> Line
 setTag l@(Line {lBlock = (Just b)}) tag = l {lBlock = Just (b {bTag = tag})}
-setTag l@(Line {lBlock = Nothing}) tag = l {lBlock = Just (Block {bTag = tag, bActive = True, bModified=True, bStatus = Normal})}
+setTag l@(Line {lBlock = Nothing}) tag = l {lBlock = Just (Block {bTag = tag, bActive = True, bModified=True,
+                                                                  bStatus = Normal, bPattern = Nothing
+                                                                 }
+                                                          )
+                                           }
 
 type Code = [Line]
 type Pos = (Int, Int)
@@ -302,7 +308,7 @@ initState
                       Super -> superDirtSetters
        (d, _) <- liftIO (setters getNow)
        logFH <- liftIO openLog
-       mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal) "sound \"bd sn\""],
+       mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) "sound \"bd sn\""],
                                         sPos = (0,0),
                                         sEditWindow = w,
                                         sFileWindow = fileWindow,
@@ -365,18 +371,35 @@ moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
 openLog :: IO Handle
 openLog = do t <- getZonedTime
              id <- getProcessID
-             let d = formatTime defaultTimeLocale "%Y%m%dT%H%M%S" t
-                 filePath = logDirectory </> d ++ "-" ++ (show id) ++ ".txt"
-             createDirectoryIfMissing True logDirectory
+             let datePath = formatTime defaultTimeLocale ("%Y" </> "%m" </> "%d") t
+                 time = formatTime defaultTimeLocale "%H%M%S" t
+                 filePath = logDirectory </> datePath </> time ++ "-" ++ (show id) ++ ".txt"
+             createDirectoryIfMissing True (logDirectory </> datePath)
              openFile filePath WriteMode
   where logDirectory = "logs"
+
+defaultLogPath = do t <- getZonedTime
+                    let y = formatTime defaultTimeLocale "%Y" t
+                        m = formatTime defaultTimeLocale "%m" t
+                        d = formatTime defaultTimeLocale "%d" t
+                        paths = tail $ inits [y,m,d]
+
+                    exists <- mapM (doesDirectoryExist . joinPath) paths
+
+                    let i = elemIndex False exists
+                    return $ case i of
+                      Nothing -> paths !! 2
+                      Just n -> paths !! (n-1)
 
 writeLog :: State -> Change -> IO ()
 writeLog s c = do hPutStrLn (sLogFH s) (show c)
                   hFlush (sLogFH s)
 
 listenRMS :: MVar State -> IO ()
-listenRMS mvS = do udp <- udpServer "127.0.0.1" 6010
+listenRMS mvS = do let port = case dirt of
+                               Super -> 0
+                               Classic -> 6010
+                   udp <- udpServer "127.0.0.1" port
                    subscribe udp
                    loop udp
   where
@@ -404,7 +427,12 @@ listenRMS mvS = do udp <- udpServer "127.0.0.1" 6010
                   | otherwise = return ()
 
 main :: IO ()
-main = do runCurses $ do
+main = do installHandler sigINT Ignore Nothing
+          installHandler sigTERM Ignore Nothing
+          installHandler sigPIPE Ignore Nothing
+          installHandler sigHUP Ignore Nothing
+          installHandler sigKILL Ignore Nothing
+          runCurses $ do
             setEcho False
             mvS <- initState
             liftIO $ forkIO $ listenRMS mvS
@@ -416,9 +444,10 @@ main = do runCurses $ do
 handleEv mvS EditMode ev =
   do let quit = return True
          ok = return False
+     if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
      case ev of
       Nothing -> ok
-      Just (EventCharacter x) -> if x == chr(27)
+      Just (EventCharacter x) -> if x == '\ESC'
                                  then quit
                                  else keypress mvS x >> ok
       Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> ok
@@ -620,11 +649,16 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act id response block
                                   s' = setBlock n block'
+                              hPutStrLn stderr $ show $ block
+                              hPutStrLn stderr $ ">>>>"
                               hPutStrLn stderr $ show $ block'
-                              hPutStrLn stderr $ show $ sCode s'
+                              -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
-  where act id (HintOK p) b = (b {bStatus = Success, bModified = False}, (p # orbit (pure id)):ps)
-        act _ (HintError err) b = (b {bStatus = Error}, ps)
+  where act id (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
+          where p' = p # orbit (pure id)
+        act _ (HintError err) b = (b {bStatus = Error}, ps')
+          where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
+                    | otherwise = ps
         setBlock n block = s {sCode = ls'}
           where ls = sCode s
                 l = (ls !! n) {lBlock = Just block}
