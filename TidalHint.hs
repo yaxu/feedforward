@@ -1,8 +1,10 @@
 module TidalHint where
 
 import Sound.Tidal.Context
-
+import System.IO
+import System.Posix.Signals
 import Language.Haskell.Interpreter as Hint
+import Control.Exception
 
 data Response = HintOK {parsed :: ParamPattern}
               | HintError {errorMessage :: String}
@@ -33,11 +35,18 @@ hintParamPattern s = Hint.runInterpreter $ do
 
 hintJob  :: (MVar String, MVar Response) -> IO ()
 hintJob (mIn, mOut) =
-  do result <- do Hint.runInterpreter $ do
-                  Hint.set [languageExtensions := [OverloadedStrings]]
-                  --Hint.setImports libs
-                  Hint.setImportsQ $ (Prelude.map (\x -> (x, Nothing)) libs) ++ [("Data.Map", Nothing)]
-                  hintLoop
+  do installHandler sigINT Ignore Nothing
+     installHandler sigTERM Ignore Nothing
+     installHandler sigPIPE Ignore Nothing
+     installHandler sigHUP Ignore Nothing
+     installHandler sigKILL Ignore Nothing
+     result <- catch (do Hint.runInterpreter $ do
+                           Hint.set [languageExtensions := [OverloadedStrings]]
+                           --Hint.setImports libs
+                           Hint.setImportsQ $ (Prelude.map (\x -> (x, Nothing)) libs) ++ [("Data.Map", Nothing)]
+                           hintLoop
+                     )
+               (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
      let response = case result of
           Left err -> HintError (parseError err)
           Right p -> HintOK p -- can happen
@@ -50,10 +59,13 @@ hintJob (mIn, mOut) =
      takeMVar mIn
      putMVar mOut response
      hintJob (mIn, mOut)
-     where hintLoop = do s <- liftIO (readMVar mIn)
+     where hintLoop = do liftIO $ hPutStrLn stderr "hintLoop"
+                         s <- liftIO (readMVar mIn)
+                         liftIO $ hPutStrLn stderr "hintLoop read"
                          -- check <- typeChecks s
                          --interp check s
                          interp True s
+                         liftIO $ hPutStrLn stderr "hintLoop interp done"
                          hintLoop
            interp True s = do p <- Hint.interpret s (Hint.as :: ParamPattern)
                               liftIO $ putMVar mOut $ HintOK p
