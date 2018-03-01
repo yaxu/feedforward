@@ -41,6 +41,7 @@ hintJob (mIn, mOut) =
      installHandler sigHUP Ignore Nothing
      installHandler sigKILL Ignore Nothing
      result <- catch (do Hint.runInterpreter $ do
+                           _ <- liftIO $ installHandler sigINT Ignore Nothing
                            Hint.set [languageExtensions := [OverloadedStrings]]
                            --Hint.setImports libs
                            Hint.setImportsQ $ (Prelude.map (\x -> (x, Nothing)) libs) ++ [("Data.Map", Nothing)]
