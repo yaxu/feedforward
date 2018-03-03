@@ -6,10 +6,10 @@
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
-import Control.Monad (foldM)
+import Control.Monad (foldM, filterM)
 import Control.Monad.IO.Class
 import Data.Char
-import Data.List (intercalate, (\\), elemIndex, inits)
+import Data.List (intercalate, (\\), elemIndex, inits, sort)
 import Data.Maybe (fromMaybe, catMaybes, isJust, fromJust)
 import Data.Time
 import Data.Time.Clock.POSIX
@@ -75,6 +75,10 @@ type CpsUtils = ((Double -> IO (), (Double -> IO ()), IO Rational))
 
 data Mode = EditMode | FileMode | PlaybackMode
 
+data FileChoice = FileChoice {fcPath :: Maybe [FilePath],
+                              fcIndex :: Int
+                             }
+
 data State = State {sCode :: Code,
                     sPos :: Pos,
                     sXWarp :: Int,
@@ -91,8 +95,8 @@ data State = State {sCode :: Code,
                     sRMS :: [Float],
                     sScroll :: (Int,Int),
                     sCpsUtils :: CpsUtils,
-                    sMode :: Mode
-                    -- sFileSel :: (Maybe Int, Maybe Int, Maybe Int)
+                    sMode :: Mode,
+                    sFileChoice :: FileChoice
                    }
 
 topMargin    = 1 :: Integer
@@ -230,8 +234,8 @@ drawFooter s =
 
 rmsBlocks = " ▁▂▃▄▅▆▇█"
 
-draw :: MVar State -> Curses ()
-draw mvS
+drawEditor :: MVar State -> Curses ()
+drawEditor mvS
   = do s <- (liftIO $ takeMVar mvS)
        s'' <- updateWindow (sEditWindow s) $ do
          clear
@@ -325,7 +329,8 @@ initState
                                         sRMS = replicate 20 0,
                                         sScroll = (0,0),
                                         sCpsUtils = cpsUtils,
-                                        sMode = EditMode
+                                        sMode = EditMode,
+                                        sFileChoice = FileChoice {fcPath = Nothing, fcIndex = 0}
                                        }
        return mvS
 
@@ -376,7 +381,8 @@ openLog = do t <- getZonedTime
                  filePath = logDirectory </> datePath </> time ++ "-" ++ (show id) ++ ".txt"
              createDirectoryIfMissing True (logDirectory </> datePath)
              openFile filePath WriteMode
-  where logDirectory = "logs"
+
+logDirectory = "logs"
 
 defaultLogPath = do t <- getZonedTime
                     let y = formatTime defaultTimeLocale "%Y" t
@@ -384,12 +390,20 @@ defaultLogPath = do t <- getZonedTime
                         d = formatTime defaultTimeLocale "%d" t
                         paths = tail $ inits [y,m,d]
 
-                    exists <- mapM (doesDirectoryExist . joinPath) paths
+                    exists <- mapM (doesDirectoryExist . joinPath . (logDirectory:)) paths
 
                     let i = elemIndex False exists
                     return $ case i of
-                      Nothing -> paths !! 2
+                      Nothing -> last paths
+                      Just 0 -> []
                       Just n -> paths !! (n-1)
+
+pathContents path = do let fullPath = joinPath (logDirectory:path)
+                       all <- listDirectory fullPath
+                       files <- filterM (doesFileExist . (fullPath </>)) all
+                       dirs <- filterM (doesDirectoryExist . (fullPath </>)) all
+                       return (dirs,files)
+                       
 
 writeLog :: State -> Change -> IO ()
 writeLog s c = do hPutStrLn (sLogFH s) (show c)
@@ -436,7 +450,7 @@ main = do installHandler sigINT Ignore Nothing
             setEcho False
             mvS <- initState
             liftIO $ forkIO $ listenRMS mvS
-            draw mvS
+            drawEditor mvS
             render
             mainLoop mvS
 
@@ -462,7 +476,22 @@ handleEv mvS EditMode ev =
       Just (EventMouse _ ms) -> mouse mvS ms >> ok
       Just e -> do liftIO $ hPutStrLn stderr $ show e
                    ok
+
 handleEv mvS FileMode Nothing = ok
+handleEv mvS FileMode (Just (EventSpecialKey k)) =
+  case k of KeyUpArrow -> fcMove mvS (-1) >> ok
+            KeyDownArrow -> fcMove mvS 1 >> ok
+            KeyLeftArrow -> do s <- (liftIO $ takeMVar mvS)
+                               let fc = sFileChoice s
+                                   path = init <$> fcPath fc
+                                   fc' = fc {fcPath = path}
+                                   s' = s {sFileChoice = fc}
+                               liftIO $ putMVar mvS s'
+                               ok
+                                   
+            KeyRightArrow -> ok
+            _ -> ok
+
 handleEv mvS FileMode (Just (EventCharacter x))
   | x == chr 27 = do s <- liftIO $ takeMVar mvS
                      liftIO $ putMVar mvS $ s {sMode = EditMode}
@@ -471,7 +500,11 @@ handleEv mvS FileMode (Just (EventCharacter x))
                 
 handleEv mvS FileMode (Just e) = do liftIO $ hPutStrLn stderr $ show e
                                     ok
-
+fcMove mvS d = do s <- liftIO $ takeMVar mvS
+                  let fileChoice = sFileChoice s
+                      i = max 0 $ (fcIndex fileChoice) + d
+                  liftIO $ putMVar mvS $ s {sFileChoice = fileChoice {fcIndex = i}}
+                  return ()
 
 quit :: Curses Bool
 quit = return True
@@ -483,8 +516,8 @@ mainLoop mvS = loop where
   loop = do s <- liftIO (readMVar mvS)
 
             case sMode s of
-             EditMode     -> draw mvS
-             FileMode     -> return ()
+             EditMode     -> drawEditor mvS
+             FileMode     -> drawDirs mvS
              PlaybackMode -> return ()
             render
              
@@ -617,17 +650,43 @@ killLine mvS =
      liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
      updateWindow (sEditWindow s) clear
 
+fileTime :: FilePath -> String
+fileTime fp = h ++ (':':m) ++ (':':s)
+  where t = take 6 fp
+        h = take 2 t
+        m = take 2 $ drop 2 t
+        s = take 2 $ drop 4 t
+
 fileMode :: MVar State -> Curses ()
 fileMode mvS = do s <- liftIO $ takeMVar mvS
-                  let s' = s {sMode = FileMode}
-                      fileWindow = sFileWindow s'
-                  updateWindow fileWindow $
-                    do clear
-                       (h,w) <- windowSize
-                       moveCursor 0 0
-                       drawString "File stuff goes here."
-                  liftIO $ hPutStrLn stderr $ "bah"
+                  defaultPath <- liftIO defaultLogPath
+                  let fileWindow = sFileWindow s'
+                      filePath = fromMaybe defaultPath $ fcPath $ sFileChoice s
+                      s' = s {sMode = FileMode, sFileChoice = FileChoice {fcPath = Just filePath, fcIndex = 0}}
                   liftIO $ putMVar mvS s'
+                  drawDirs mvS
+
+drawDirs:: MVar State -> Curses ()
+drawDirs mvS
+  = do s <- (liftIO $ takeMVar mvS)
+       defaultPath <- liftIO defaultLogPath
+       let fileWindow = sFileWindow s
+           fc = sFileChoice s
+           filePath = fromMaybe defaultPath $ fcPath fc
+       (dirs,files) <- (liftIO $ pathContents filePath)
+       let i = min (fromIntegral $ length dirs + length files) $ max 0 $ fromIntegral $ fcIndex fc
+       updateWindow fileWindow $
+         do clear
+            (h,w) <- windowSize
+            mapM_ (drawDir i) $ take (fromIntegral h - 1) $ zip [0..] (sort dirs ++ (map fileTime $ sort files))
+            moveCursor 0 0
+            drawString $ take 10 $ intercalate "/" filePath
+       liftIO $ putMVar mvS s
+  where drawDir i (n,dir) = do setAttribute AttributeReverse (n == i)
+                               moveCursor (n+1) 0
+                               drawString dir
+                               setAttribute AttributeReverse False
+
 
 eval :: MVar State -> Curses ()
 eval mvS = 
