@@ -75,8 +75,10 @@ type CpsUtils = ((Double -> IO (), (Double -> IO ()), IO Rational))
 
 data Mode = EditMode | FileMode | PlaybackMode
 
-data FileChoice = FileChoice {fcPath :: Maybe [FilePath],
-                              fcIndex :: Int
+data FileChoice = FileChoice {fcPath :: [FilePath],
+                              fcIndex :: Int,
+                              fcDirs :: [FilePath],
+                              fcFiles :: [FilePath]
                              }
 
 data State = State {sCode :: Code,
@@ -330,7 +332,11 @@ initState
                                         sScroll = (0,0),
                                         sCpsUtils = cpsUtils,
                                         sMode = EditMode,
-                                        sFileChoice = FileChoice {fcPath = Nothing, fcIndex = 0}
+                                        sFileChoice = FileChoice {fcPath = [],
+                                                                  fcIndex = 0,
+                                                                  fcDirs = [],
+                                                                  fcFiles = []
+                                                                 }
                                        }
        return mvS
 
@@ -483,13 +489,29 @@ handleEv mvS FileMode (Just (EventSpecialKey k)) =
             KeyDownArrow -> fcMove mvS 1 >> ok
             KeyLeftArrow -> do s <- (liftIO $ takeMVar mvS)
                                let fc = sFileChoice s
-                                   path = init <$> fcPath fc
-                                   fc' = fc {fcPath = path}
-                                   s' = s {sFileChoice = fc}
+                                   path = init $ fcPath fc
+                               -- liftIO $ hPutStrLn stderr $ "origpath: " ++ (show (fcPath fc)) ++ " new path: " ++ (show path)
+                               (dirs,files) <- (liftIO $ pathContents path)
+                               let fc' = fc {fcPath = path, fcDirs = sort dirs, fcFiles = sort files}
+                                   s' = s {sFileChoice = fc'}
                                liftIO $ putMVar mvS s'
                                ok
-                                   
-            KeyRightArrow -> ok
+            KeyRightArrow -> do s <- (liftIO $ takeMVar mvS)
+                                let fc = sFileChoice s
+                                    selected = fcDirs fc !! fcIndex fc
+                                    path = fcPath fc ++ [selected]
+                                -- liftIO $ hPutStrLn stderr $ "origpath: " ++ (show (fcPath fc)) ++ " new path: " ++ (show path)
+                                if fcIndex fc < (length (fcDirs fc))
+                                  then do (dirs,files) <- (liftIO $ pathContents path)
+                                          let fc' = fc {fcPath = path, fcDirs = (sort dirs),
+                                                        fcFiles = (sort files),
+                                                        fcIndex = 0
+                                                       }
+                                              s' = s {sFileChoice = fc'}
+                                          liftIO $ putMVar mvS s'
+                                  else do liftIO $ putMVar mvS s
+                                          return ()
+                                ok
             _ -> ok
 
 handleEv mvS FileMode (Just (EventCharacter x))
@@ -502,8 +524,11 @@ handleEv mvS FileMode (Just e) = do liftIO $ hPutStrLn stderr $ show e
                                     ok
 fcMove mvS d = do s <- liftIO $ takeMVar mvS
                   let fileChoice = sFileChoice s
-                      i = max 0 $ (fcIndex fileChoice) + d
-                  liftIO $ putMVar mvS $ s {sFileChoice = fileChoice {fcIndex = i}}
+                      maxI = (length $ fcDirs fileChoice) + (length $ fcFiles fileChoice) - 1
+                      i = min maxI $ max 0 $ (fcIndex fileChoice) + d
+                  liftIO $ hPutStrLn stderr $ "max: " ++ show maxI ++ " i: " ++ show i
+                  liftIO $ putMVar mvS $
+                    s {sFileChoice = fileChoice {fcIndex = i}}
                   return ()
 
 quit :: Curses Bool
@@ -660,25 +685,34 @@ fileTime fp = h ++ (':':m) ++ (':':s)
 fileMode :: MVar State -> Curses ()
 fileMode mvS = do s <- liftIO $ takeMVar mvS
                   defaultPath <- liftIO defaultLogPath
-                  let fileWindow = sFileWindow s'
-                      filePath = fromMaybe defaultPath $ fcPath $ sFileChoice s
-                      s' = s {sMode = FileMode, sFileChoice = FileChoice {fcPath = Just filePath, fcIndex = 0}}
+                  (dirs,files) <- (liftIO $ pathContents defaultPath)
+                  let s' = s {sMode = FileMode,
+                              sFileChoice =
+                                FileChoice {fcPath = defaultPath,
+                                            fcIndex = 0,
+                                            fcDirs = sort dirs,
+                                            fcFiles = sort files
+                                           }
+                             }
                   liftIO $ putMVar mvS s'
                   drawDirs mvS
+
+-- readDir fc 
 
 drawDirs:: MVar State -> Curses ()
 drawDirs mvS
   = do s <- (liftIO $ takeMVar mvS)
-       defaultPath <- liftIO defaultLogPath
        let fileWindow = sFileWindow s
            fc = sFileChoice s
-           filePath = fromMaybe defaultPath $ fcPath fc
-       (dirs,files) <- (liftIO $ pathContents filePath)
+           filePath = fcPath fc
+           dirs = fcDirs fc
+           dirs' = map (++ "/") dirs
+           files = fcFiles fc
        let i = min (fromIntegral $ length dirs + length files) $ max 0 $ fromIntegral $ fcIndex fc
        updateWindow fileWindow $
          do clear
             (h,w) <- windowSize
-            mapM_ (drawDir i) $ take (fromIntegral h - 1) $ zip [0..] (sort dirs ++ (map fileTime $ sort files))
+            mapM_ (drawDir i) $ take (fromIntegral h - 1) $ zip [0..] (sort dirs' ++ (map fileTime $ sort files))
             moveCursor 0 0
             drawString $ take 10 $ intercalate "/" filePath
        liftIO $ putMVar mvS s
