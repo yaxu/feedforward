@@ -4,6 +4,8 @@
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
+{-# LANGUAGE DeriveGeneric #-}
+
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Monad (foldM, filterM)
@@ -21,10 +23,14 @@ import System.FilePath
 import System.IO
 import System.Posix.Process
 import System.Posix.Signals
+import System.Environment (getArgs)
 import TidalHint
 import UI.NCurses
 import Text.Printf
 import qualified Network.Socket as N
+
+import qualified Data.Aeson as A
+import GHC.Generics
 
 type Tag = Int
 
@@ -126,7 +132,10 @@ data Change = Change {cFrom :: Pos,
                       cWhen :: Double,
                       cNewPos :: Pos
                      }
-            deriving Show
+            deriving (Show, Generic)
+
+instance A.ToJSON Change
+instance A.FromJSON Change
 
 type ChangeSet = [Change]
 
@@ -296,8 +305,8 @@ drawEditor mvS
                                          drawString $ str
                         | otherwise = return ()
 
-initState :: Curses (MVar State)
-initState
+initState :: [String] -> Curses (MVar State)
+initState args
   = do w <- defaultWindow
        updateWindow w clear
        fg <- newColorID ColorWhite ColorDefault 1
@@ -452,14 +461,27 @@ main = do installHandler sigINT Ignore Nothing
           installHandler sigPIPE Ignore Nothing
           installHandler sigHUP Ignore Nothing
           installHandler sigKILL Ignore Nothing
+          argv <- getArgs
           runCurses $ do
             setEcho False
-            mvS <- initState
+            mvS <- initState argv
             liftIO $ forkIO $ listenRMS mvS
             drawEditor mvS
             render
             mainLoop mvS
 
+playbackThread mvS path = do return ()
+
+handleEv mvS PlaybackMode ev =
+  do let quit = return True
+         ok = return False
+     -- if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
+     case ev of
+      Nothing -> ok
+      Just (EventCharacter x) -> if x == '\ESC'
+                                 then do s <- liftIO $ takeMVar mvS
+                                         liftIO $ putMVar mvS $ s {sMode = EditMode}
+                                 else ok
 
 handleEv mvS EditMode ev =
   do let quit = return True
@@ -543,7 +565,7 @@ mainLoop mvS = loop where
             case sMode s of
              EditMode     -> drawEditor mvS
              FileMode     -> drawDirs mvS
-             PlaybackMode -> return ()
+             PlaybackMode -> drawEditor mvS
             render
              
             ev <- getEvent (sEditWindow s) (Just 50)
