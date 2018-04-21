@@ -1,0 +1,15 @@
+Change {cFrom = (0,13), cTo = (0,13), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881054677627e9, cNewPos = (0,14)}
+Change {cFrom = (0,14), cTo = (0,14), cText = ["#"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881057525542e9, cNewPos = (0,15)}
+Change {cFrom = (0,15), cTo = (0,15), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881059019818e9, cNewPos = (0,16)}
+Change {cFrom = (0,16), cTo = (0,16), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881061387546e9, cNewPos = (0,17)}
+Change {cFrom = (0,17), cTo = (0,17), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881062317834e9, cNewPos = (0,18)}
+Change {cFrom = (0,18), cTo = (0,18), cText = ["b"], cRemoved = [""], cOrigin = "+input", cWhen = 1.518388106396256e9, cNewPos = (0,19)}
+Change {cFrom = (0,19), cTo = (0,19), cText = ["i"], cRemoved = [""], cOrigin = "+input", cWhen = 1.518388106475912e9, cNewPos = (0,20)}
+Change {cFrom = (0,20), cTo = (0,20), cText = ["t"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881065845363e9, cNewPos = (0,21)}
+Change {cFrom = (0,21), cTo = (0,21), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881066872015e9, cNewPos = (0,22)}
+Change {cFrom = (0,22), cTo = (0,22), cText = ["1"], cRemoved = [""], cOrigin = "+input", cWhen = 1.518388106872617e9, cNewPos = (0,23)}
+Change {cFrom = (0,23), cTo = (0,23), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881072485375e9, cNewPos = (1,0)}
+Change {cFrom = (0,23), cTo = (0,23), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881153969235e9, cNewPos = (0,24)}
+Change {cFrom = (0,23), cTo = (0,24), cText = [""], cRemoved = [" "], cOrigin = "+delete", cWhen = 1.5183881162717736e9, cNewPos = (0,23)}
+Change {cFrom = (0,22), cTo = (0,23), cText = [""], cRemoved = ["1"], cOrigin = "+delete", cWhen = 1.5183881172859335e9, cNewPos = (0,22)}
+Change {cFrom = (0,22), cTo = (0,22), cText = ["2"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183881173691304e9, cNewPos = (0,23)}

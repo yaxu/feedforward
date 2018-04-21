@@ -1,0 +1,250 @@
+Change {cFrom = (0,0), cTo = (0,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607081924472e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (1,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060708429542e9, cNewPos = (2,0)}
+Change {cFrom = (2,13), cTo = (2,13), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607106441433e9, cNewPos = (3,0)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.51906071080932e9, cNewPos = (4,0)}
+Change {cFrom = (4,0), cTo = (4,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607109671583e9, cNewPos = (5,0)}
+Change {cFrom = (5,0), cTo = (5,0), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607111448286e9, cNewPos = (5,1)}
+Change {cFrom = (5,1), cTo = (5,1), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607112578356e9, cNewPos = (5,2)}
+Change {cFrom = (5,2), cTo = (5,2), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060711334976e9, cNewPos = (5,3)}
+Change {cFrom = (5,3), cTo = (5,3), cText = ["n"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607114397397e9, cNewPos = (5,4)}
+Change {cFrom = (5,4), cTo = (5,4), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607114481826e9, cNewPos = (5,5)}
+Change {cFrom = (5,5), cTo = (5,5), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607115671213e9, cNewPos = (5,6)}
+Change {cFrom = (5,6), cTo = (5,6), cText = ["\""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607116961477e9, cNewPos = (5,7)}
+Change {cFrom = (5,7), cTo = (5,7), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607119324837e9, cNewPos = (5,8)}
+Change {cFrom = (5,8), cTo = (5,8), cText = ["p"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607120262315e9, cNewPos = (5,9)}
+Change {cFrom = (5,9), cTo = (5,9), cText = ["\""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607121586475e9, cNewPos = (5,10)}
+Change {cFrom = (0,0), cTo = (1,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607156811054e9, cNewPos = (0,0)}
+Change {cFrom = (0,0), cTo = (1,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607160934994e9, cNewPos = (0,0)}
+Change {cFrom = (3,10), cTo = (3,10), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607188432374e9, cNewPos = (4,0)}
+Change {cFrom = (4,0), cTo = (4,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607193432424e9, cNewPos = (5,0)}
+Change {cFrom = (5,0), cTo = (5,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060719376593e9, cNewPos = (6,0)}
+Change {cFrom = (6,0), cTo = (6,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607194097533e9, cNewPos = (7,0)}
+Change {cFrom = (7,0), cTo = (7,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607194427114e9, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (8,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607194756305e9, cNewPos = (9,0)}
+Change {cFrom = (9,0), cTo = (9,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060719509025e9, cNewPos = (10,0)}
+Change {cFrom = (10,0), cTo = (10,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607195433893e9, cNewPos = (11,0)}
+Change {cFrom = (11,0), cTo = (11,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607195768275e9, cNewPos = (12,0)}
+Change {cFrom = (12,0), cTo = (12,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.51906071960933e9, cNewPos = (13,0)}
+Change {cFrom = (13,0), cTo = (13,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607196431592e9, cNewPos = (14,0)}
+Change {cFrom = (14,0), cTo = (14,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060719676031e9, cNewPos = (15,0)}
+Change {cFrom = (15,0), cTo = (15,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060719708493e9, cNewPos = (16,0)}
+Change {cFrom = (16,0), cTo = (16,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607197422228e9, cNewPos = (17,0)}
+Change {cFrom = (17,0), cTo = (17,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607197759736e9, cNewPos = (18,0)}
+Change {cFrom = (18,0), cTo = (18,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.51906071980899e9, cNewPos = (19,0)}
+Change {cFrom = (19,0), cTo = (19,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607198420975e9, cNewPos = (20,0)}
+Change {cFrom = (20,0), cTo = (20,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607198760006e9, cNewPos = (21,0)}
+Change {cFrom = (21,0), cTo = (21,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607199097054e9, cNewPos = (22,0)}
+Change {cFrom = (22,0), cTo = (22,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060719942355e9, cNewPos = (23,0)}
+Change {cFrom = (23,0), cTo = (23,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060719975977e9, cNewPos = (24,0)}
+Change {cFrom = (24,0), cTo = (24,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607200093715e9, cNewPos = (25,0)}
+Change {cFrom = (1,0), cTo = (1,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060730319259e9, cNewPos = (2,0)}
+Change {cFrom = (2,0), cTo = (2,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607308203278e9, cNewPos = (3,0)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607308533278e9, cNewPos = (4,0)}
+Change {cFrom = (4,0), cTo = (4,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607308861728e9, cNewPos = (5,0)}
+Change {cFrom = (5,0), cTo = (5,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060730919755e9, cNewPos = (6,0)}
+Change {cFrom = (6,0), cTo = (6,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607309527407e9, cNewPos = (7,0)}
+Change {cFrom = (7,0), cTo = (7,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607309857457e9, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (8,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607310190551e9, cNewPos = (9,0)}
+Change {cFrom = (9,0), cTo = (9,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607310530188e9, cNewPos = (10,0)}
+Change {cFrom = (10,0), cTo = (10,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607310869727e9, cNewPos = (11,0)}
+Change {cFrom = (11,0), cTo = (11,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607311198761e9, cNewPos = (12,0)}
+Change {cFrom = (12,0), cTo = (12,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607311532173e9, cNewPos = (13,0)}
+Change {cFrom = (13,0), cTo = (13,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607311869845e9, cNewPos = (14,0)}
+Change {cFrom = (14,0), cTo = (14,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060731220893e9, cNewPos = (15,0)}
+Change {cFrom = (15,0), cTo = (15,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060731254728e9, cNewPos = (16,0)}
+Change {cFrom = (16,0), cTo = (16,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060731417317e9, cNewPos = (17,0)}
+Change {cFrom = (17,0), cTo = (17,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060731646487e9, cNewPos = (18,0)}
+Change {cFrom = (18,0), cTo = (18,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607318200698e9, cNewPos = (19,0)}
+Change {cFrom = (19,0), cTo = (19,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607320414057e9, cNewPos = (20,0)}
+Change {cFrom = (18,0), cTo = (19,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607333314428e9, cNewPos = (18,0)}
+Change {cFrom = (18,0), cTo = (19,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607336567302e9, cNewPos = (18,0)}
+Change {cFrom = (18,0), cTo = (18,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607371493325e9, cNewPos = (19,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607405918412e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607410915537e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607411252003e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607411591082e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607411915116e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607412248907e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607412580745e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607412909696e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607413236072e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607413567433e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607413895926e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607414222143e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.519060741455654e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607414891665e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607415227587e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.519060741556224e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190607419137254e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (2,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.519060742150803e9, cNewPos = (1,0)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060745271661e9, cNewPos = (3,1)}
+Change {cFrom = (3,1), cTo = (3,1), cText = ["h"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607453511462e9, cNewPos = (3,2)}
+Change {cFrom = (3,2), cTo = (3,2), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607454219108e9, cNewPos = (3,3)}
+Change {cFrom = (3,3), cTo = (3,3), cText = ["p"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607454770088e9, cNewPos = (3,4)}
+Change {cFrom = (3,4), cTo = (3,4), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607455224872e9, cNewPos = (3,5)}
+Change {cFrom = (3,5), cTo = (3,5), cText = ["8"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060745677938e9, cNewPos = (3,6)}
+Change {cFrom = (3,6), cTo = (3,6), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607457824652e9, cNewPos = (3,7)}
+Change {cFrom = (3,7), cTo = (3,7), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607459186766e9, cNewPos = (3,8)}
+Change {cFrom = (3,8), cTo = (3,8), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060746038838e9, cNewPos = (3,9)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607495330036e9, cNewPos = (3,1)}
+Change {cFrom = (3,1), cTo = (3,1), cText = ["l"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060749637146e9, cNewPos = (3,2)}
+Change {cFrom = (3,2), cTo = (3,2), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607496919208e9, cNewPos = (3,3)}
+Change {cFrom = (3,3), cTo = (3,3), cText = ["w"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607497742333e9, cNewPos = (3,4)}
+Change {cFrom = (3,4), cTo = (3,4), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607498623056e9, cNewPos = (3,5)}
+Change {cFrom = (3,5), cTo = (3,5), cText = ["4"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060749961949e9, cNewPos = (3,6)}
+Change {cFrom = (3,6), cTo = (3,6), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607500792341e9, cNewPos = (3,7)}
+Change {cFrom = (3,7), cTo = (3,7), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607502197573e9, cNewPos = (3,8)}
+Change {cFrom = (3,8), cTo = (3,8), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607503215802e9, cNewPos = (3,9)}
+Change {cFrom = (0,0), cTo = (0,0), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607565111885e9, cNewPos = (0,1)}
+Change {cFrom = (0,1), cTo = (0,1), cText = ["h"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607565911295e9, cNewPos = (0,2)}
+Change {cFrom = (0,2), cTo = (0,2), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607566461434e9, cNewPos = (0,3)}
+Change {cFrom = (0,3), cTo = (0,3), cText = ["p"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607567093225e9, cNewPos = (0,4)}
+Change {cFrom = (0,4), cTo = (0,4), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607567705534e9, cNewPos = (0,5)}
+Change {cFrom = (0,5), cTo = (0,5), cText = ["8"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607569574716e9, cNewPos = (0,6)}
+Change {cFrom = (0,6), cTo = (0,6), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060757013712e9, cNewPos = (0,7)}
+Change {cFrom = (0,7), cTo = (0,7), cText = ["4"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607571444461e9, cNewPos = (0,8)}
+Change {cFrom = (0,8), cTo = (0,8), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060757287341e9, cNewPos = (0,9)}
+Change {cFrom = (0,8), cTo = (0,9), cText = [""], cRemoved = [" "], cOrigin = "+delete", cWhen = 1.519060758481849e9, cNewPos = (0,8)}
+Change {cFrom = (0,7), cTo = (0,8), cText = [""], cRemoved = ["4"], cOrigin = "+delete", cWhen = 1.5190607585996957e9, cNewPos = (0,7)}
+Change {cFrom = (0,7), cTo = (0,7), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607587297733e9, cNewPos = (0,8)}
+Change {cFrom = (0,8), cTo = (0,8), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607589536033e9, cNewPos = (0,9)}
+Change {cFrom = (0,5), cTo = (0,6), cText = [""], cRemoved = ["8"], cOrigin = "+delete", cWhen = 1.5190607644108884e9, cNewPos = (0,5)}
+Change {cFrom = (0,5), cTo = (0,5), cText = ["3"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607644776464e9, cNewPos = (0,6)}
+Change {cFrom = (0,6), cTo = (0,6), cText = ["2"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607645477376e9, cNewPos = (0,7)}
+Change {cFrom = (0,0), cTo = (0,0), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607661814637e9, cNewPos = (0,1)}
+Change {cFrom = (0,1), cTo = (0,1), cText = ["e"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607662595892e9, cNewPos = (0,2)}
+Change {cFrom = (0,2), cTo = (0,2), cText = ["v"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060766441533e9, cNewPos = (0,3)}
+Change {cFrom = (0,3), cTo = (0,3), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060766552952e9, cNewPos = (0,4)}
+Change {cFrom = (0,4), cTo = (0,4), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.51906076669105e9, cNewPos = (0,5)}
+Change {cFrom = (0,5), cTo = (0,5), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607668109062e9, cNewPos = (0,6)}
+Change {cFrom = (0,0), cTo = (0,0), cText = ["i"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060772872182e9, cNewPos = (0,1)}
+Change {cFrom = (0,1), cTo = (0,1), cText = ["t"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060772942097e9, cNewPos = (0,2)}
+Change {cFrom = (0,2), cTo = (0,2), cText = ["e"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607730509017e9, cNewPos = (0,3)}
+Change {cFrom = (0,3), cTo = (0,3), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060773159976e9, cNewPos = (0,4)}
+Change {cFrom = (0,4), cTo = (0,4), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607732329462e9, cNewPos = (0,5)}
+Change {cFrom = (0,5), cTo = (0,5), cText = ["4"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607733639228e9, cNewPos = (0,6)}
+Change {cFrom = (0,6), cTo = (0,6), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607735238798e9, cNewPos = (0,7)}
+Change {cFrom = (0,7), cTo = (0,7), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607738291554e9, cNewPos = (0,8)}
+Change {cFrom = (0,8), cTo = (0,8), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607741487446e9, cNewPos = (0,9)}
+Change {cFrom = (0,0), cTo = (0,0), cText = ["j"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607769642866e9, cNewPos = (0,1)}
+Change {cFrom = (0,1), cTo = (0,1), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607772255156e9, cNewPos = (0,2)}
+Change {cFrom = (0,2), cTo = (0,2), cText = ["x"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060777342524e9, cNewPos = (0,3)}
+Change {cFrom = (0,3), cTo = (0,3), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607774591763e9, cNewPos = (0,4)}
+Change {cFrom = (0,4), cTo = (0,4), cText = ["("], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607776502264e9, cNewPos = (0,5)}
+Change {cFrom = (0,11), cTo = (0,11), cText = [")"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607792032614e9, cNewPos = (0,12)}
+Change {cFrom = (3,26), cTo = (3,27), cText = [""], cRemoved = ["p"], cOrigin = "+delete", cWhen = 1.5190607839220014e9, cNewPos = (3,26)}
+Change {cFrom = (3,25), cTo = (3,26), cText = [""], cRemoved = ["c"], cOrigin = "+delete", cWhen = 1.5190607840475242e9, cNewPos = (3,25)}
+Change {cFrom = (3,25), cTo = (3,25), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607841310487e9, cNewPos = (3,26)}
+Change {cFrom = (3,26), cTo = (3,26), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607842805598e9, cNewPos = (3,27)}
+Change {cFrom = (3,27), cTo = (3,27), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607843675985e9, cNewPos = (3,28)}
+Change {cFrom = (3,28), cTo = (3,28), cText = ["m"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060784477456e9, cNewPos = (3,29)}
+Change {cFrom = (3,29), cTo = (3,29), cText = ["("], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607846817112e9, cNewPos = (3,30)}
+Change {cFrom = (3,30), cTo = (3,30), cText = ["3"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607849081204e9, cNewPos = (3,31)}
+Change {cFrom = (3,31), cTo = (3,31), cText = [","], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607850506902e9, cNewPos = (3,32)}
+Change {cFrom = (3,32), cTo = (3,32), cText = ["8"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607852163134e9, cNewPos = (3,33)}
+Change {cFrom = (3,33), cTo = (3,33), cText = [")"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607854452817e9, cNewPos = (3,34)}
+Change {cFrom = (3,28), cTo = (3,29), cText = [""], cRemoved = ["m"], cOrigin = "+delete", cWhen = 1.5190607878049698e9, cNewPos = (3,28)}
+Change {cFrom = (3,27), cTo = (3,28), cText = [""], cRemoved = ["u"], cOrigin = "+delete", cWhen = 1.5190607881537957e9, cNewPos = (3,27)}
+Change {cFrom = (3,26), cTo = (3,27), cText = [""], cRemoved = ["r"], cOrigin = "+delete", cWhen = 1.5190607883354309e9, cNewPos = (3,26)}
+Change {cFrom = (3,25), cTo = (3,26), cText = [""], cRemoved = ["d"], cOrigin = "+delete", cWhen = 1.5190607885567086e9, cNewPos = (3,25)}
+Change {cFrom = (3,25), cTo = (3,25), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060788721197e9, cNewPos = (3,26)}
+Change {cFrom = (3,25), cTo = (3,26), cText = [""], cRemoved = ["o"], cOrigin = "+delete", cWhen = 1.5190607892543435e9, cNewPos = (3,25)}
+Change {cFrom = (3,25), cTo = (3,25), cText = ["k"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607894899821e9, cNewPos = (3,26)}
+Change {cFrom = (3,26), cTo = (3,26), cText = ["i"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607896598465e9, cNewPos = (3,27)}
+Change {cFrom = (3,27), cTo = (3,27), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060789915077e9, cNewPos = (3,28)}
+Change {cFrom = (3,28), cTo = (3,28), cText = ["k"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607900192454e9, cNewPos = (3,29)}
+Change {cFrom = (3,29), cTo = (3,29), cText = ["l"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607903441052e9, cNewPos = (3,30)}
+Change {cFrom = (3,30), cTo = (3,30), cText = ["i"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060790446098e9, cNewPos = (3,31)}
+Change {cFrom = (3,31), cTo = (3,31), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607905452878e9, cNewPos = (3,32)}
+Change {cFrom = (3,31), cTo = (3,32), cText = [""], cRemoved = ["c"], cOrigin = "+delete", cWhen = 1.5190607909623601e9, cNewPos = (3,31)}
+Change {cFrom = (3,31), cTo = (3,31), cText = ["n"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607912043169e9, cNewPos = (3,32)}
+Change {cFrom = (3,32), cTo = (3,32), cText = ["n"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607913222144e9, cNewPos = (3,33)}
+Change {cFrom = (3,32), cTo = (3,33), cText = [""], cRemoved = ["n"], cOrigin = "+delete", cWhen = 1.5190607940217566e9, cNewPos = (3,32)}
+Change {cFrom = (3,31), cTo = (3,32), cText = [""], cRemoved = ["n"], cOrigin = "+delete", cWhen = 1.5190607941474164e9, cNewPos = (3,31)}
+Change {cFrom = (3,30), cTo = (3,31), cText = [""], cRemoved = ["i"], cOrigin = "+delete", cWhen = 1.5190607943126206e9, cNewPos = (3,30)}
+Change {cFrom = (3,29), cTo = (3,30), cText = [""], cRemoved = ["l"], cOrigin = "+delete", cWhen = 1.5190607944705305e9, cNewPos = (3,29)}
+Change {cFrom = (3,28), cTo = (3,29), cText = [""], cRemoved = ["k"], cOrigin = "+delete", cWhen = 1.5190607946439967e9, cNewPos = (3,28)}
+Change {cFrom = (3,27), cTo = (3,28), cText = [""], cRemoved = ["c"], cOrigin = "+delete", cWhen = 1.519060794809096e9, cNewPos = (3,27)}
+Change {cFrom = (3,26), cTo = (3,27), cText = [""], cRemoved = ["i"], cOrigin = "+delete", cWhen = 1.5190607949664729e9, cNewPos = (3,26)}
+Change {cFrom = (3,25), cTo = (3,26), cText = [""], cRemoved = ["k"], cOrigin = "+delete", cWhen = 1.519060795124549e9, cNewPos = (3,25)}
+Change {cFrom = (3,25), cTo = (3,25), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607952967196e9, cNewPos = (3,26)}
+Change {cFrom = (3,26), cTo = (3,26), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060795373381e9, cNewPos = (3,27)}
+Change {cFrom = (3,27), cTo = (3,27), cText = ["x"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190607955534205e9, cNewPos = (3,28)}
+Change {cFrom = (3,5), cTo = (3,6), cText = [""], cRemoved = ["4"], cOrigin = "+delete", cWhen = 1.5190608008848417e9, cNewPos = (3,5)}
+Change {cFrom = (3,5), cTo = (3,5), cText = ["1"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608009916964e9, cNewPos = (3,6)}
+Change {cFrom = (3,34), cTo = (3,34), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608052255247e9, cNewPos = (3,35)}
+Change {cFrom = (3,35), cTo = (3,35), cText = ["#"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608053512545e9, cNewPos = (3,36)}
+Change {cFrom = (3,36), cTo = (3,36), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608054311118e9, cNewPos = (3,37)}
+Change {cFrom = (3,37), cTo = (3,37), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608055753415e9, cNewPos = (3,38)}
+Change {cFrom = (3,38), cTo = (3,38), cText = ["p"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608056959088e9, cNewPos = (3,39)}
+Change {cFrom = (3,39), cTo = (3,39), cText = ["e"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608057640355e9, cNewPos = (3,40)}
+Change {cFrom = (3,40), cTo = (3,40), cText = ["e"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060805920265e9, cNewPos = (3,41)}
+Change {cFrom = (3,41), cTo = (3,41), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608060935628e9, cNewPos = (3,42)}
+Change {cFrom = (3,42), cTo = (3,42), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608061744757e9, cNewPos = (3,43)}
+Change {cFrom = (3,43), cTo = (3,43), cText = ["2"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608062810943e9, cNewPos = (3,44)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608121436327e9, cNewPos = (3,1)}
+Change {cFrom = (3,1), cTo = (3,1), cText = ["h"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608122773023e9, cNewPos = (3,2)}
+Change {cFrom = (3,2), cTo = (3,2), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608123250296e9, cNewPos = (3,3)}
+Change {cFrom = (3,3), cTo = (3,3), cText = ["n"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608125371084e9, cNewPos = (3,4)}
+Change {cFrom = (3,4), cTo = (3,4), cText = ["k"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608125686183e9, cNewPos = (3,5)}
+Change {cFrom = (3,5), cTo = (3,5), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060812664025e9, cNewPos = (3,6)}
+Change {cFrom = (3,6), cTo = (3,6), cText = ["4"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608127940433e9, cNewPos = (3,7)}
+Change {cFrom = (3,7), cTo = (3,7), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608129432395e9, cNewPos = (3,8)}
+Change {cFrom = (3,8), cTo = (3,8), cText = ["("], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608130382802e9, cNewPos = (3,9)}
+Change {cFrom = (3,9), cTo = (3,9), cText = [")"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608131324508e9, cNewPos = (3,10)}
+Change {cFrom = (3,10), cTo = (3,10), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060813203777e9, cNewPos = (3,11)}
+Change {cFrom = (3,11), cTo = (3,11), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608132334063e9, cNewPos = (3,12)}
+Change {cFrom = (3,12), cTo = (3,12), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608134134862e9, cNewPos = (3,13)}
+Change {cFrom = (3,9), cTo = (3,9), cText = ["h"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608144631124e9, cNewPos = (3,10)}
+Change {cFrom = (3,10), cTo = (3,10), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608145398624e9, cNewPos = (3,11)}
+Change {cFrom = (3,11), cTo = (3,11), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608146167696e9, cNewPos = (3,12)}
+Change {cFrom = (3,12), cTo = (3,12), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060814748212e9, cNewPos = (3,13)}
+Change {cFrom = (3,13), cTo = (3,13), cText = ["y"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608148194938e9, cNewPos = (3,14)}
+Change {cFrom = (3,14), cTo = (3,14), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060814883186e9, cNewPos = (3,15)}
+Change {cFrom = (3,15), cTo = (3,15), cText = ["2"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608149966724e9, cNewPos = (3,16)}
+Change {cFrom = (3,5), cTo = (3,5), cText = [";"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608181153991e9, cNewPos = (3,6)}
+Change {cFrom = (3,5), cTo = (3,6), cText = [""], cRemoved = [";"], cOrigin = "+delete", cWhen = 1.5190608192831383e9, cNewPos = (3,5)}
+Change {cFrom = (3,5), cTo = (3,5), cText = ["'"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608196626492e9, cNewPos = (3,6)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["j"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608257434998e9, cNewPos = (3,1)}
+Change {cFrom = (3,1), cTo = (3,1), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060825932705e9, cNewPos = (3,2)}
+Change {cFrom = (3,2), cTo = (3,2), cText = ["x"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060826035516e9, cNewPos = (3,3)}
+Change {cFrom = (3,3), cTo = (3,3), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608261107376e9, cNewPos = (3,4)}
+Change {cFrom = (3,4), cTo = (3,4), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608262715163e9, cNewPos = (3,5)}
+Change {cFrom = (3,5), cTo = (3,5), cText = ["e"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608263311734e9, cNewPos = (3,6)}
+Change {cFrom = (3,6), cTo = (3,6), cText = ["v"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608265202966e9, cNewPos = (3,7)}
+Change {cFrom = (3,7), cTo = (3,7), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608266383066e9, cNewPos = (3,8)}
+Change {cFrom = (3,8), cTo = (3,8), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608267623942e9, cNewPos = (3,9)}
+Change {cFrom = (3,9), cTo = (3,9), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608268822796e9, cNewPos = (3,10)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (8,0), cTo = (9,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (8,0)}
+Change {cFrom = (1,0), cTo = (1,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608426065366e9, cNewPos = (2,0)}
+Change {cFrom = (2,0), cTo = (2,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060842803974e9, cNewPos = (3,0)}
+Change {cFrom = (3,0), cTo = (3,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608429770625e9, cNewPos = (4,0)}
+Change {cFrom = (4,0), cTo = (4,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608431584435e9, cNewPos = (5,0)}
+Change {cFrom = (0,0), cTo = (0,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608445459194e9, cNewPos = (1,0)}
+Change {cFrom = (1,0), cTo = (1,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060844727629e9, cNewPos = (2,0)}
+Change {cFrom = (2,0), cTo = (2,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.519060844909592e9, cNewPos = (3,0)}
+Change {cFrom = (2,0), cTo = (2,0), cText = ["f"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190608464711435e9, cNewPos = (2,1)}
+Change {cFrom = (2,0), cTo = (2,1), cText = [""], cRemoved = ["f"], cOrigin = "+delete", cWhen = 1.5190608475400417e9, cNewPos = (2,0)}
+Change {cFrom = (0,0), cTo = (1,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190608497568345e9, cNewPos = (0,0)}
+Change {cFrom = (0,0), cTo = (1,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190608500021362e9, cNewPos = (0,0)}
+Change {cFrom = (0,0), cTo = (1,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190608505666504e9, cNewPos = (0,0)}
+Change {cFrom = (2,0), cTo = (3,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190608513018801e9, cNewPos = (2,0)}
+Change {cFrom = (2,0), cTo = (3,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190608515338407e9, cNewPos = (2,0)}
+Change {cFrom = (2,0), cTo = (3,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.519060851736956e9, cNewPos = (2,0)}
+Change {cFrom = (2,0), cTo = (3,0), cText = [""], cRemoved = ["",""], cOrigin = "+delete", cWhen = 1.5190608519817588e9, cNewPos = (2,0)}

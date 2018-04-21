@@ -1,0 +1,7 @@
+Change {cFrom = (0,0), cTo = (0,0), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190850631960623e9, cNewPos = (0,1)}
+Change {cFrom = (0,1), cTo = (0,1), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190850632434e9, cNewPos = (0,2)}
+Change {cFrom = (0,2), cTo = (0,2), cText = ["l"], cRemoved = [""], cOrigin = "+input", cWhen = 1.51908506329129e9, cNewPos = (0,3)}
+Change {cFrom = (0,3), cTo = (0,3), cText = ["f"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190850632918625e9, cNewPos = (0,4)}
+Change {cFrom = (0,4), cTo = (0,4), cText = ["k"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190850633505468e9, cNewPos = (0,5)}
+Change {cFrom = (0,5), cTo = (0,5), cText = ["j"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190850633898351e9, cNewPos = (0,6)}
+Change {cFrom = (0,6), cTo = (0,6), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.519085063467582e9, cNewPos = (0,7)}

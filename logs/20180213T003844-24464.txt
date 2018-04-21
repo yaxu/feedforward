@@ -1,0 +1,15 @@
+Change {cFrom = (0,0), cTo = (0,13), cText = [""], cRemoved = ["sound \"bd sn\""], cOrigin = "+delete", cWhen = -1.0, cNewPos = (0,0)}
+Change {cFrom = (0,0), cTo = (0,0), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.518482332941694e9, cNewPos = (0,1)}
+Change {cFrom = (0,1), cTo = (0,1), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823330945308e9, cNewPos = (0,2)}
+Change {cFrom = (0,2), cTo = (0,2), cText = ["u"], cRemoved = [""], cOrigin = "+input", cWhen = 1.51848233315534e9, cNewPos = (0,3)}
+Change {cFrom = (0,3), cTo = (0,3), cText = ["n"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823332483077e9, cNewPos = (0,4)}
+Change {cFrom = (0,4), cTo = (0,4), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823332489305e9, cNewPos = (0,5)}
+Change {cFrom = (0,5), cTo = (0,5), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823333724904e9, cNewPos = (0,6)}
+Change {cFrom = (0,6), cTo = (0,6), cText = ["\""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823339401112e9, cNewPos = (0,7)}
+Change {cFrom = (0,7), cTo = (0,7), cText = ["m"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823343923597e9, cNewPos = (0,8)}
+Change {cFrom = (0,8), cTo = (0,8), cText = ["i"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823344636621e9, cNewPos = (0,9)}
+Change {cFrom = (0,9), cTo = (0,9), cText = ["c"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823345558405e9, cNewPos = (0,10)}
+Change {cFrom = (0,10), cTo = (0,10), cText = ["r"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823346660876e9, cNewPos = (0,11)}
+Change {cFrom = (0,11), cTo = (0,11), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823347587028e9, cNewPos = (0,12)}
+Change {cFrom = (0,12), cTo = (0,12), cText = ["n"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823348058538e9, cNewPos = (0,13)}
+Change {cFrom = (0,13), cTo = (0,13), cText = ["\""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5184823350636275e9, cNewPos = (0,14)}
