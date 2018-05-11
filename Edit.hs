@@ -1,3 +1,4 @@
+
 {- Feedforward (c) Alex McLean 2018
    Text editor for TidalCycles
    https://github.com/yaxu/feedforward
@@ -8,7 +9,7 @@
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
-import Control.Monad (foldM, filterM)
+import Control.Monad (foldM, filterM, forever)
 import Control.Monad.IO.Class
 import Data.Char
 import Data.List (intercalate, (\\), elemIndex, inits, sort)
@@ -23,11 +24,16 @@ import System.FilePath
 import System.IO
 import System.Posix.Process
 import System.Posix.Signals
-import System.Environment (getArgs)
+import System.Environment (getArgs,lookupEnv)
 import TidalHint
 import UI.NCurses
 import Text.Printf
 import qualified Network.Socket as N
+import qualified Network.WebSockets as WS
+import Data.Text.Lazy.Encoding (decodeUtf8)
+import Data.Text.Lazy (Text)
+import qualified Data.Text.Lazy as T
+import qualified Data.Text.IO as T
 
 import qualified Data.Aeson as A
 import GHC.Generics
@@ -53,7 +59,7 @@ data Line = Line {lBlock :: Maybe Block,
 data Dirt = Classic | Super
           deriving Eq
 
-dirt = Super
+dirt = Classic
 
 lTag :: Line -> Maybe Tag
 lTag l = do block <- lBlock l
@@ -104,7 +110,8 @@ data State = State {sCode :: Code,
                     sScroll :: (Int,Int),
                     sCpsUtils :: CpsUtils,
                     sMode :: Mode,
-                    sFileChoice :: FileChoice
+                    sFileChoice :: FileChoice,
+                    sCircle :: Maybe (Change -> IO ())
                    }
 
 topMargin    = 1 :: Integer
@@ -132,6 +139,7 @@ data Change = Change {cFrom :: Pos,
                       cWhen :: Double,
                       cNewPos :: Pos
                      }
+            | Eval {cWhen :: Double}
             deriving (Show, Generic)
 
 instance A.ToJSON Change
@@ -164,8 +172,8 @@ updateTags ls = assignTags freeTags ls'
           where empty = not $ hasChar l
 
 applyChange :: MVar State -> State -> Change -> IO ()
-applyChange mvS s change = do putMVar mvS s'
-                              writeLog s change
+applyChange mvS s (change@(Change {})) = do putMVar mvS s'
+                                            writeLog s change
   where ls | (cOrigin change) == "+input" = updateTags $ applyInput s change
            | (cOrigin change) == "+delete" = updateTags $ applyDelete s change
            | otherwise = sCode s
@@ -174,6 +182,15 @@ applyChange mvS s change = do putMVar mvS s'
                 sCode = ls,
                 sPos = cNewPos change
                }
+
+applyChange mvS s change@(Eval {}) = do
+  do let blocks = activeBlocks 0 $ sCode s
+     hPutStrLn stderr $ "eval"
+     do (s',ps) <- foldM evalBlock (s, []) blocks
+        (sDirt s) (stack ps)
+        writeLog s' change
+        putMVar mvS s'
+     return ()
 
 withLineText :: Line -> (String -> String)  -> Line
 withLineText (Line tag text) f = Line tag (f text )
@@ -206,6 +223,8 @@ insertChange (y,x) str = Change {cFrom = (y,x),
         x' | length str == 1 = x + (length $ head str)
            | otherwise = length $ last str
 
+evalChange :: Change
+evalChange = Eval {cWhen = -1}
 
 deleteChange :: Pos -> Pos -> [String] -> Change
 deleteChange from to removed = Change {cFrom = from,
@@ -305,6 +324,31 @@ drawEditor mvS
                                          drawString $ str
                         | otherwise = return ()
 
+connectCircle :: IO (Maybe (Change -> IO ()))
+connectCircle =
+  do addr <- fromMaybe "127.0.0.1" <$> lookupEnv "CIRCLE_ADDR"
+     port <- fromMaybe "6010" <$> lookupEnv "CIRCLE_PORT"
+     name <- lookupEnv "CIRCLE_NAME"
+     hPutStrLn stderr "connectcircle"
+     if isJust name
+       then do mChange <- newEmptyMVar 
+               forkIO $ WS.runClient addr (read port) "/" (app (fromJust name) mChange)
+               return $ Just $ putMVar (mChange :: MVar Change)
+       else (return Nothing)
+       where app name mChange conn =
+               do -- hPutStrLn stderr "Connected!"
+                  let msg = T.pack $ "/name " ++ name
+                  WS.sendTextData conn msg
+                  
+                  forkIO $ forever $ do
+                    msg <- WS.receiveData conn
+                    liftIO $ T.putStrLn msg
+                  let loop = do
+                        change <- takeMVar mChange
+                        WS.sendTextData conn (T.append (T.pack "/change ") $ decodeUtf8 $ A.encode $ change) >> loop
+                  loop
+                  WS.sendClose conn (T.pack "/quit")
+
 initState :: [String] -> Curses (MVar State)
 initState args
   = do w <- defaultWindow
@@ -323,6 +367,7 @@ initState args
                       Super -> superDirtSetters
        (d, _) <- liftIO (setters getNow)
        logFH <- liftIO openLog
+       circle <- liftIO connectCircle
        mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) "sound \"bd sn\""],
                                         sPos = (0,0),
                                         sEditWindow = w,
@@ -345,7 +390,8 @@ initState args
                                                                   fcIndex = 0,
                                                                   fcDirs = [],
                                                                   fcFiles = []
-                                                                 }
+                                                                 },
+                                        sCircle = circle
                                        }
        return mvS
 
@@ -423,6 +469,9 @@ pathContents path = do let fullPath = joinPath (logDirectory:path)
 writeLog :: State -> Change -> IO ()
 writeLog s c = do hPutStrLn (sLogFH s) (show c)
                   hFlush (sLogFH s)
+                  sendCircle (sCircle s)
+                    where sendCircle Nothing = return ()
+                          sendCircle (Just f) = f c
 
 listenRMS :: MVar State -> IO ()
 listenRMS mvS = do let port = case dirt of
@@ -473,7 +522,7 @@ main = do installHandler sigINT Ignore Nothing
 playbackThread mvS path = do return ()
 
 handleEv mvS PlaybackMode ev =
-  do let quit = return True
+  do let -- quit = return True
          ok = return False
      -- if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
      case ev of
@@ -481,6 +530,7 @@ handleEv mvS PlaybackMode ev =
       Just (EventCharacter x) -> if x == '\ESC'
                                  then do s <- liftIO $ takeMVar mvS
                                          liftIO $ putMVar mvS $ s {sMode = EditMode}
+                                         ok
                                  else ok
 
 handleEv mvS EditMode ev =
@@ -622,6 +672,15 @@ cursorContext' s (y,x) =
          postX = drop x $ lText l
      
 
+eval :: MVar State -> Curses ()
+eval mvS =
+  do s <- (liftIO $ takeMVar mvS)
+     now <- (liftIO $ realToFrac <$> getPOSIXTime)
+     let change = evalChange {cWhen = now}
+     liftIO $ applyChange mvS s change
+     -- updateWindow (sEditWindow s) clear
+     return ()
+
 insertBreak :: MVar State -> Curses ()
 insertBreak mvS =
   do s <- (liftIO $ takeMVar mvS)
@@ -742,18 +801,6 @@ drawDirs mvS
                                moveCursor (n+1) 0
                                drawString dir
                                setAttribute AttributeReverse False
-
-
-eval :: MVar State -> Curses ()
-eval mvS = 
-  do s <- (liftIO $ takeMVar mvS)
-     let blocks = activeBlocks 0 $ sCode s
-     liftIO $ hPutStrLn stderr $ "eval"
-     liftIO $ do (s',ps) <- foldM evalBlock (s, []) blocks
-                 (sDirt s) (stack ps)
-                 putMVar mvS s'
-     return ()
-
 
 evalBlock :: (State, [ParamPattern]) -> (Int, Code) -> IO (State, [ParamPattern])
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
