@@ -467,7 +467,7 @@ pathContents path = do let fullPath = joinPath (logDirectory:path)
                        
 
 writeLog :: State -> Change -> IO ()
-writeLog s c = do hPutStrLn (sLogFH s) (show c)
+writeLog s c = do hPutStrLn (sLogFH s) (A.encode $ c)
                   hFlush (sLogFH s)
                   sendCircle (sCircle s)
                     where sendCircle Nothing = return ()
