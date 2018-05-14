@@ -7,7 +7,7 @@
 
 {-# LANGUAGE DeriveGeneric #-}
 
-import Control.Concurrent (forkIO)
+import Control.Concurrent (forkIO, ThreadId, killThread)
 import Control.Concurrent.MVar
 import Control.Monad (foldM, filterM, forever)
 import Control.Monad.IO.Class
@@ -30,7 +30,7 @@ import UI.NCurses
 import Text.Printf
 import qualified Network.Socket as N
 import qualified Network.WebSockets as WS
-import Data.Text.Lazy.Encoding (decodeUtf8)
+import Data.Text.Lazy.Encoding (decodeUtf8,encodeUtf8)
 import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.IO as T
@@ -58,6 +58,10 @@ data Line = Line {lBlock :: Maybe Block,
 
 data Dirt = Classic | Super
           deriving Eq
+
+data Playback = Playback {pbOffset :: Double,
+                          pbChanges :: [Change]
+                         }
 
 dirt = Classic
 
@@ -111,7 +115,8 @@ data State = State {sCode :: Code,
                     sCpsUtils :: CpsUtils,
                     sMode :: Mode,
                     sFileChoice :: FileChoice,
-                    sCircle :: Maybe (Change -> IO ())
+                    sCircle :: Maybe (Change -> IO ()),
+                    sPlayback :: Maybe Playback
                    }
 
 topMargin    = 1 :: Integer
@@ -140,6 +145,9 @@ data Change = Change {cFrom :: Pos,
                       cNewPos :: Pos
                      }
             | Eval {cWhen :: Double}
+            | Move {cWhen :: Double,
+                    cNewPos :: Pos
+                   }
             deriving (Show, Generic)
 
 instance A.ToJSON Change
@@ -171,9 +179,9 @@ updateTags ls = assignTags freeTags ls'
         taggable prevEmpty (l:ls) = (prevEmpty && (not empty), l):(taggable empty ls)
           where empty = not $ hasChar l
 
-applyChange :: MVar State -> State -> Change -> IO ()
-applyChange mvS s (change@(Change {})) = do putMVar mvS s'
-                                            writeLog s change
+applyChange :: State -> Change -> IO (State)
+applyChange s (change@(Change {})) = do writeLog s' change
+                                        return s'
   where ls | (cOrigin change) == "+input" = updateTags $ applyInput s change
            | (cOrigin change) == "+delete" = updateTags $ applyDelete s change
            | otherwise = sCode s
@@ -183,14 +191,13 @@ applyChange mvS s (change@(Change {})) = do putMVar mvS s'
                 sPos = cNewPos change
                }
 
-applyChange mvS s change@(Eval {}) = do
+applyChange s change@(Eval {}) = do
   do let blocks = activeBlocks 0 $ sCode s
      hPutStrLn stderr $ "eval"
-     do (s',ps) <- foldM evalBlock (s, []) blocks
-        (sDirt s) (stack ps)
-        writeLog s' change
-        putMVar mvS s'
-     return ()
+     (s',ps) <- foldM evalBlock (s, []) blocks
+     (sDirt s) (stack ps)
+     writeLog s' change
+     return s'
 
 withLineText :: Line -> (String -> String)  -> Line
 withLineText (Line tag text) f = Line tag (f text )
@@ -368,7 +375,7 @@ initState args
        (d, _) <- liftIO (setters getNow)
        logFH <- liftIO openLog
        circle <- liftIO connectCircle
-       mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) "sound \"bd sn\""],
+       mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) ""],
                                         sPos = (0,0),
                                         sEditWindow = w,
                                         sFileWindow = fileWindow,
@@ -391,7 +398,8 @@ initState args
                                                                   fcDirs = [],
                                                                   fcFiles = []
                                                                  },
-                                        sCircle = circle
+                                        sCircle = circle,
+                                        sPlayback = Nothing
                                        }
        return mvS
 
@@ -467,7 +475,7 @@ pathContents path = do let fullPath = joinPath (logDirectory:path)
                        
 
 writeLog :: State -> Change -> IO ()
-writeLog s c = do hPutStrLn (sLogFH s) (A.encode $ c)
+writeLog s c = do hPutStrLn (sLogFH s) (T.unpack $ decodeUtf8 $ A.encode $ c)
                   hFlush (sLogFH s)
                   sendCircle (sCircle s)
                     where sendCircle Nothing = return ()
@@ -519,8 +527,6 @@ main = do installHandler sigINT Ignore Nothing
             render
             mainLoop mvS
 
-playbackThread mvS path = do return ()
-
 handleEv mvS PlaybackMode ev =
   do let -- quit = return True
          ok = return False
@@ -532,6 +538,7 @@ handleEv mvS PlaybackMode ev =
                                          liftIO $ putMVar mvS $ s {sMode = EditMode}
                                          ok
                                  else ok
+      Just _ -> ok
 
 handleEv mvS EditMode ev =
   do let quit = return True
@@ -568,20 +575,25 @@ handleEv mvS FileMode (Just (EventSpecialKey k)) =
                                    s' = s {sFileChoice = fc'}
                                liftIO $ putMVar mvS s'
                                ok
-            KeyRightArrow -> do s <- (liftIO $ takeMVar mvS)
+            KeyRightArrow -> do s <- (liftIO $ readMVar mvS)
                                 let fc = sFileChoice s
-                                    selected = fcDirs fc !! fcIndex fc
-                                    path = fcPath fc ++ [selected]
+                                    path = selectedPath fc
                                 -- liftIO $ hPutStrLn stderr $ "origpath: " ++ (show (fcPath fc)) ++ " new path: " ++ (show path)
                                 if fcIndex fc < (length (fcDirs fc))
-                                  then do (dirs,files) <- (liftIO $ pathContents path)
+                                  then do s <- (liftIO $ takeMVar mvS)
+                                          (dirs,files) <- (liftIO $ pathContents path)
                                           let fc' = fc {fcPath = path, fcDirs = (sort dirs),
                                                         fcFiles = (sort files),
                                                         fcIndex = 0
                                                        }
                                               s' = s {sFileChoice = fc'}
                                           liftIO $ putMVar mvS s'
-                                  else do liftIO $ putMVar mvS s
+                                  else do -- clear screen
+                                          delAll mvS
+                                          s <- (liftIO $ takeMVar mvS)
+                                          liftIO $ hPutStrLn stderr $ "select file: " ++ joinPath path
+                                          liftIO $ do s' <- (startPlayback s $ joinPath path)
+                                                      putMVar mvS s'
                                           return ()
                                 ok
             _ -> ok
@@ -617,12 +629,28 @@ mainLoop mvS = loop where
              FileMode     -> drawDirs mvS
              PlaybackMode -> drawEditor mvS
             render
-             
-            ev <- getEvent (sEditWindow s) (Just 50)
+
+            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
+            updateScreen mvS (sMode s)
             if done
               then return ()
               else loop
+
+updateScreen :: MVar State -> Mode -> Curses ()
+updateScreen mvS PlaybackMode
+  = do s <- liftIO $ takeMVar mvS
+       let (Playback offset cs) = fromJust $ sPlayback s
+       now <- liftIO $ (realToFrac <$> getPOSIXTime)
+       let (ready, waiting) = takeReady cs (now - offset)
+       s' <- liftIO $ foldM applyChange s ready
+       liftIO $ putMVar mvS (s' {sPlayback = Just $ Playback offset waiting})
+       return ()
+         where takeReady cs t = (takeWhile (\c -> (cWhen c) < t) cs,
+                                 dropWhile (\c -> (cWhen c) < t) cs
+                                )
+
+updateScreen _ _ = return ()
 
 -- emacs movement
 keyCtrl mvS 'a' = moveHome mvS
@@ -674,31 +702,34 @@ cursorContext' s (y,x) =
 
 eval :: MVar State -> Curses ()
 eval mvS =
-  do s <- (liftIO $ takeMVar mvS)
-     now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     let change = evalChange {cWhen = now}
-     liftIO $ applyChange mvS s change
+  do liftIO $ do s <- (takeMVar mvS)
+                 now <- (realToFrac <$> getPOSIXTime)
+                 let change = evalChange {cWhen = now}
+                 s' <- applyChange s change
+                 putMVar mvS s'
      -- updateWindow (sEditWindow s) clear
      return ()
 
 insertBreak :: MVar State -> Curses ()
 insertBreak mvS =
-  do s <- (liftIO $ takeMVar mvS)
-     let (y,x) = sPos s
-         (y',x') = (y+1,0)
-     now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     let change = (insertChange (y,x) ["",""]) {cWhen = now}
-     liftIO $ applyChange mvS (s {sXWarp = 0}) change
+  do s <- liftIO $ takeMVar mvS
+     liftIO $ do let (y,x) = sPos s
+                     (y',x') = (y+1,0)
+                 now <- (realToFrac <$> getPOSIXTime)
+                 let change = (insertChange (y,x) ["",""]) {cWhen = now}
+                 s' <- applyChange (s {sXWarp = 0}) change
+                 putMVar mvS s'
      updateWindow (sEditWindow s) clear
 
 insertChar :: MVar State -> Char -> Curses ()
 insertChar mvS c =
-  do s <- (liftIO $ takeMVar mvS)
-     let (y,x) = sPos s
-         (y',x') = (y,x+1)
-     now <- (liftIO $ realToFrac <$> getPOSIXTime)
-     let change = (insertChange (y,x) [[c]]) {cWhen = now}
-     liftIO $ applyChange mvS (s {sXWarp = x'}) change
+  do s <- liftIO $ takeMVar mvS
+     liftIO $ do let (y,x) = sPos s
+                     (y',x') = (y,x+1)
+                 now <- (realToFrac <$> getPOSIXTime)
+                 let change = (insertChange (y,x) [[c]]) {cWhen = now}
+                 s' <- applyChange (s {sXWarp = x'}) change
+                 putMVar mvS s'
      updateWindow (sEditWindow s) clear
 
 backspaceChar :: State -> State
@@ -731,7 +762,8 @@ backspace mvS =
                                                     lineLength ls (y-1)
                                                    ) (y, x) ["", ""]
                                      ) {cWhen = now}
-     liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
+     s' <- liftIO $ maybe (return s) (applyChange s) change
+     liftIO $ putMVar mvS s'
      updateWindow (sEditWindow s) clear
 
 del :: MVar State -> Curses ()
@@ -742,7 +774,21 @@ del mvS =
          change | x < (length $ lText l) = Just $ (deleteChange (y,x) (y,x+1) [[charAt ls (y,x)]]) {cWhen = now}
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
-     liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
+     s' <- liftIO $ maybe (return s) (applyChange s) change
+     liftIO $ putMVar mvS s'
+     updateWindow (sEditWindow s) clear
+
+delAll :: MVar State -> Curses ()
+delAll mvS =
+  do s <- (liftIO $ takeMVar mvS)
+     now <- (liftIO $ realToFrac <$> getPOSIXTime)
+     let ls = sCode s
+         lastY = (length ls) - 1
+         lastX = (lineLength ls lastY) - 1
+         change | null ls = Nothing
+                | otherwise = Just $ (deleteChange (0,0) (lastY,lastX+1) (map lText ls)) {cWhen = now}
+     s' <- liftIO $ maybe (return s) (applyChange s) change
+     liftIO $ putMVar mvS s'
      updateWindow (sEditWindow s) clear
 
 killLine :: MVar State -> Curses ()
@@ -753,7 +799,8 @@ killLine mvS =
          change | x < (length $ lText l) = Just $ deleteChange (y,x) (y,(length $ lText l)) [postX]
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
-     liftIO $ maybe (putMVar mvS s) (applyChange mvS s) change
+     s' <- liftIO $ maybe (return s) (applyChange s) change
+     liftIO $ putMVar mvS s'
      updateWindow (sEditWindow s) clear
 
 fileTime :: FilePath -> String
@@ -843,3 +890,24 @@ scSub = do udp <- udpServer "127.0.0.1" 0
   where loop udp = do m <- recvMessage udp
                       putStrLn $ show m
                       loop udp
+
+selectedPath fc = fcPath fc ++ [selected]
+  where selected = (fcDirs fc ++ fcFiles fc) !! fcIndex fc
+
+startPlayback :: State -> FilePath -> IO State
+startPlayback s path = 
+  do now <- (realToFrac <$> getPOSIXTime)
+     fh <- openFile (logDirectory </> path) ReadMode
+     c <- hGetContents fh
+     let ls = lines c
+         changes = catMaybes $ map (A.decode . encodeUtf8 . T.pack) ls
+         offset | (length changes) > 0 = now - (cWhen (head changes))
+                | otherwise = 0
+         playback = Playback {pbChanges = changes,
+                              pbOffset = offset
+                             }
+     return $ s {sPlayback = Just playback,
+                 sMode = PlaybackMode
+                }
+
+
