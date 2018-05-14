@@ -1,9 +1,0 @@
-Change {cFrom = (0,0), cTo = (0,0), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.518345081875069e9, cNewPos = (0,1)}
-Change {cFrom = (0,1), cTo = (0,1), cText = ["l"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450819402347e9, cNewPos = (0,2)}
-Change {cFrom = (0,2), cTo = (0,2), cText = ["o"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450820178413e9, cNewPos = (0,3)}
-Change {cFrom = (0,3), cTo = (0,3), cText = ["w"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450821251128e9, cNewPos = (0,4)}
-Change {cFrom = (0,4), cTo = (0,4), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450822530723e9, cNewPos = (0,5)}
-Change {cFrom = (0,5), cTo = (0,5), cText = ["8"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450824165509e9, cNewPos = (0,6)}
-Change {cFrom = (0,6), cTo = (0,6), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450824968562e9, cNewPos = (0,7)}
-Change {cFrom = (0,7), cTo = (0,7), cText = ["$"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183450826421995e9, cNewPos = (0,8)}
-Change {cFrom = (0,8), cTo = (0,8), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.518345082738442e9, cNewPos = (0,9)}

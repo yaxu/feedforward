@@ -1,5 +1,0 @@
-Change {cFrom = (0,0), cTo = (0,0), cText = ["a"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190851410021281e9, cNewPos = (0,1)}
-Change {cFrom = (0,1), cTo = (0,1), cText = ["s"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190851410730686e9, cNewPos = (0,2)}
-Change {cFrom = (0,2), cTo = (0,2), cText = ["d"], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190851411042016e9, cNewPos = (0,3)}
-Change {cFrom = (0,3), cTo = (0,3), cText = ["f"], cRemoved = [""], cOrigin = "+input", cWhen = 1.519085141166704e9, cNewPos = (0,4)}
-Change {cFrom = (0,4), cTo = (0,4), cText = [" "], cRemoved = [""], cOrigin = "+input", cWhen = 1.5190851412766125e9, cNewPos = (0,5)}

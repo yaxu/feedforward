@@ -1,2 +1,0 @@
-Change {cFrom = (0,13), cTo = (0,13), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183859838657453e9, cNewPos = (1,0)}
-Change {cFrom = (1,0), cTo = (1,0), cText = ["",""], cRemoved = [""], cOrigin = "+input", cWhen = 1.5183859840312386e9, cNewPos = (2,0)}
