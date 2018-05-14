@@ -23,7 +23,7 @@ runJob job = do putStrLn $ "Parsing: " ++ job
                 return response
 -}
 
-libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum"]
+libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum","Sound.Tidal.Simple"]
 
 {-
 hintParamPattern  :: String -> IO (Either InterpreterError ParamPattern)
@@ -60,13 +60,10 @@ hintJob (mIn, mOut) =
      takeMVar mIn
      putMVar mOut response
      hintJob (mIn, mOut)
-     where hintLoop = do liftIO $ hPutStrLn stderr "hintLoop"
-                         s <- liftIO (readMVar mIn)
-                         liftIO $ hPutStrLn stderr "hintLoop read"
+     where hintLoop = do s <- liftIO (readMVar mIn)
                          -- check <- typeChecks s
                          --interp check s
                          interp True s
-                         liftIO $ hPutStrLn stderr "hintLoop interp done"
                          hintLoop
            interp True s = do p <- Hint.interpret s (Hint.as :: ParamPattern)
                               liftIO $ putMVar mOut $ HintOK p

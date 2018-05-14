@@ -193,7 +193,6 @@ applyChange s (change@(Change {})) = do writeLog s' change
 
 applyChange s change@(Eval {}) = do
   do let blocks = activeBlocks 0 $ sCode s
-     hPutStrLn stderr $ "eval"
      (s',ps) <- foldM evalBlock (s, []) blocks
      (sDirt s) (stack ps)
      writeLog s' change
@@ -543,7 +542,7 @@ handleEv mvS PlaybackMode ev =
 handleEv mvS EditMode ev =
   do let quit = return True
          ok = return False
-     if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
+     -- if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
      case ev of
       Nothing -> ok
       Just (EventCharacter x) -> if x == '\ESC'
@@ -591,7 +590,7 @@ handleEv mvS FileMode (Just (EventSpecialKey k)) =
                                   else do -- clear screen
                                           delAll mvS
                                           s <- (liftIO $ takeMVar mvS)
-                                          liftIO $ hPutStrLn stderr $ "select file: " ++ joinPath path
+                                          -- liftIO $ hPutStrLn stderr $ "select file: " ++ joinPath path
                                           liftIO $ do s' <- (startPlayback s $ joinPath path)
                                                       putMVar mvS s'
                                           return ()
@@ -610,7 +609,7 @@ fcMove mvS d = do s <- liftIO $ takeMVar mvS
                   let fileChoice = sFileChoice s
                       maxI = (length $ fcDirs fileChoice) + (length $ fcFiles fileChoice) - 1
                       i = min maxI $ max 0 $ (fcIndex fileChoice) + d
-                  liftIO $ hPutStrLn stderr $ "max: " ++ show maxI ++ " i: " ++ show i
+                  -- liftIO $ hPutStrLn stderr $ "max: " ++ show maxI ++ " i: " ++ show i
                   liftIO $ putMVar mvS $
                     s {sFileChoice = fileChoice {fcIndex = i}}
                   return ()
@@ -858,9 +857,9 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act id response block
                                   s' = setBlock n block'
-                              hPutStrLn stderr $ show $ block
-                              hPutStrLn stderr $ ">>>>"
-                              hPutStrLn stderr $ show $ block'
+                              -- hPutStrLn stderr $ show $ block
+                              -- hPutStrLn stderr $ ">>>>"
+                              -- hPutStrLn stderr $ show $ block'
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
