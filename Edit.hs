@@ -5,20 +5,18 @@
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-{-# LANGUAGE DeriveGeneric #-}
-
 import Control.Concurrent (forkIO, ThreadId, killThread)
 import Control.Concurrent.MVar
-import Control.Monad (foldM, filterM, forever)
+import Control.Monad (foldM, filterM, forever, when, unless)
 import Control.Monad.IO.Class
 import Data.Char
-import Data.List (intercalate, (\\), elemIndex, inits, sort)
-import Data.Maybe (fromMaybe, catMaybes, isJust, fromJust)
+import Data.List (intercalate, (\\), elemIndex, inits, sort, isPrefixOf, stripPrefix)
+import Data.Maybe (fromMaybe, catMaybes, isJust, fromJust, mapMaybe)
 import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Time.Format
 import Sound.OSC.FD
-import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils, stack, orbit, (#), cpsUtils')
+import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils, stack, orbit, (#), cpsUtils', silence)
 import System.Directory
 import System.FilePath
 import System.IO
@@ -38,6 +36,8 @@ import qualified Data.Text.IO as T
 import qualified Data.Aeson as A
 import GHC.Generics
 
+import Change
+
 type Tag = Int
 
 data Status = Success | Error | Normal
@@ -56,6 +56,8 @@ data Line = Line {lBlock :: Maybe Block,
                  }
              deriving Show
 
+type Code = [Line]
+
 data Dirt = Classic | Super
           deriving Eq
 
@@ -65,29 +67,28 @@ data Playback = Playback {pbOffset :: Double,
 
 dirt = Classic
 
+playbackSpeed = 2
+
 lTag :: Line -> Maybe Tag
-lTag l = do block <- lBlock l
-            return $ bTag block
+lTag l = bTag <$> lBlock l
 
 lActive :: Line -> Bool
-lActive (Line {lBlock = Just (Block {bActive = a})}) = a
+lActive Line {lBlock = Just Block {bActive = a}} = a
 lActive _ = False
 
 lStatus :: Line -> Maybe Status
-lStatus l = do block <- lBlock l
-               return $ bStatus block
+lStatus l = bStatus <$> lBlock l
 
 setTag :: Line -> Tag -> Line
-setTag l@(Line {lBlock = (Just b)}) tag = l {lBlock = Just (b {bTag = tag})}
-setTag l@(Line {lBlock = Nothing}) tag = l {lBlock = Just (Block {bTag = tag, bActive = True, bModified=True,
+setTag l@Line {lBlock = (Just b)} tag = l {lBlock = Just (b {bTag = tag})}
+setTag l@Line {lBlock = Nothing} tag = l {lBlock = Just (Block {bTag = tag, bActive = True, bModified=True,
                                                                   bStatus = Normal, bPattern = Nothing
                                                                  }
                                                           )
                                            }
 
-type Code = [Line]
-type Pos = (Int, Int)
-type CpsUtils = ((Double -> IO (), (Double -> IO ()), IO Rational))
+
+type CpsUtils = (Double -> IO (), Double -> IO (), IO Rational)
 
 data Mode = EditMode | FileMode | PlaybackMode
 
@@ -116,7 +117,8 @@ data State = State {sCode :: Code,
                     sMode :: Mode,
                     sFileChoice :: FileChoice,
                     sCircle :: Maybe (Change -> IO ()),
-                    sPlayback :: Maybe Playback
+                    sPlayback :: Maybe Playback,
+                    sName :: Maybe String
                    }
 
 topMargin    = 1 :: Integer
@@ -124,49 +126,18 @@ bottomMargin = 2 :: Integer
 leftMargin   = 3 :: Integer
 rightMargin  = 0 :: Integer
 
-{- Fires every time the content of the editor is changed. The changeObj
-is a {from, to, text, removed, origin} object containing information
-about the changes that occurred as second argument. from and to are
-the positions (in the pre-change coordinate system) where the change
-started and ended (for example, it might be {ch:0, line:18} if the
-position is at the beginning of line #19). text is an array of strings
-representing the text that replaced the changed range (split by
-line). removed is the text that used to be between from and to, which
-is overwritten by this change. This event is fired before the end of
-an operation, before the DOM updates happen.
--}
-
-data Change = Change {cFrom :: Pos,
-                      cTo :: Pos,
-                      cText :: [String],
-                      cRemoved :: [String],
-                      cOrigin :: String,
-                      cWhen :: Double,
-                      cNewPos :: Pos
-                     }
-            | Eval {cWhen :: Double}
-            | Move {cWhen :: Double,
-                    cNewPos :: Pos
-                   }
-            deriving (Show, Generic)
-
-instance A.ToJSON Change
-instance A.FromJSON Change
-
-type ChangeSet = [Change]
-
 hasChar :: Line -> Bool
-hasChar = or . map (/= ' ') . lText
+hasChar = any (/= ' ') . lText
 
 updateTags :: Code -> Code
 updateTags ls = assignTags freeTags ls'
   where assignTags :: [Tag] -> Code -> Code
-        assignTags [] (l:ls) = (l:ls)
+        assignTags [] (l:ls) = l:ls
         assignTags _ [] = []
-        assignTags ids (l:ls) | lTag l == Just (-1) = (setTag l (head ids)):(assignTags (tail ids) ls)
+        assignTags ids (l:ls) | lTag l == Just (-1) = setTag l (head ids):(assignTags (tail ids) ls)
                               | otherwise = l:(assignTags ids ls)
         freeTags = [0 .. 9] \\ tagIds
-        tagIds = catMaybes $ map lTag ls'
+        tagIds = mapMaybe lTag ls'
         ls' = map tag toTag
         tag :: (Bool, Line) -> Line
         tag (False, l) = l {lBlock = Nothing}
@@ -191,12 +162,23 @@ applyChange s (change@(Change {})) = do writeLog s' change
                 sPos = cNewPos change
                }
 
-applyChange s change@(Eval {}) = do
+applyChange s change@(Eval {}) =
   do let blocks = activeBlocks 0 $ sCode s
      (s',ps) <- foldM evalBlock (s, []) blocks
      (sDirt s) (stack ps)
      writeLog s' change
      return s'
+
+applyChange s change@(Snapshot {}) =
+  do hPutStrLn stderr $ "got a snapshot"
+     writeLog s change
+     return $ s {sCode = updateTags $ map (Line Nothing) (cText change),
+                 sPos = (0,0)
+                }
+
+applyChange s _ =
+  do hPutStrLn stderr $ "unhandled change type"
+     return s
 
 withLineText :: Line -> (String -> String)  -> Line
 withLineText (Line tag text) f = Line tag (f text )
@@ -242,7 +224,7 @@ deleteChange from to removed = Change {cFrom = from,
                                        cNewPos = from
                                       }
 
-goCursor state = moveCursor ((topMargin + (fromIntegral $ fst $ sPos state))-sY) ((leftMargin + (fromIntegral $ snd $ sPos state)) - sX)
+goCursor state = moveCursor ((topMargin + (fromIntegral $ fst $ sPos state))-sY) ((leftMargin + fromIntegral (snd $ sPos state)) - sX)
   where sY = fromIntegral $ fst $ sScroll state
         sX = fromIntegral $ snd $ sScroll state
 
@@ -261,11 +243,13 @@ doScroll s (h,w) = s {sScroll = (sy',sx')}
 drawFooter :: State -> Curses ()
 drawFooter s =
   do mc <- maxColor
+     let name = fromMaybe "" ((\x -> "[" ++ x ++ "] ") <$> sName s)
+                                  
      updateWindow (sEditWindow s) $
        do (h,w) <- windowSize
           moveCursor (h-2) 0
           setColor $ sColourHilite s
-          let str = " " ++ show (sPos s)
+          let str = " " ++ name ++ show (sPos s)
           drawString $ str ++ replicate ((fromIntegral w) - (length str)) ' '
 
 rmsBlocks = " ▁▂▃▄▅▆▇█"
@@ -274,11 +258,17 @@ drawEditor :: MVar State -> Curses ()
 drawEditor mvS
   = do s <- (liftIO $ takeMVar mvS)
        s'' <- updateWindow (sEditWindow s) $ do
-         clear
+         -- clear
          (h,w) <- windowSize
          let s' = doScroll s (h,w)
          setColor (sColour s')
-         mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ zip (sCode s) [0 ..]
+         let ls = zip (sCode s) [0 ..]
+         mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ ls
+         -- HACK: clear trailing line in case one has been deleted
+         -- assumes only one line ever deleted at a time (true so far)
+         when (length ls < (fromIntegral $ h - (bottomMargin + topMargin))) $
+           do moveCursor (1 + (fromIntegral $ length ls)) 0
+              drawString $ take (fromIntegral w) $ repeat ' '
          return s'
        drawFooter s''
        updateWindow (sEditWindow s) $ goCursor s''
@@ -290,18 +280,15 @@ drawEditor mvS
                  skipBoth = take (fromIntegral $ w - (leftMargin + rightMargin + 1)) $ skipLeft
              moveCursor y leftMargin
              setColor (sColour s)
-             drawString skipBoth
+             drawString (take (fromIntegral $ w-leftMargin) $ skipBoth ++ repeat ' ')
 
              setColor $ sColourHilite s
-             if scrollX > 0
-               then do moveCursor y leftMargin
-                       drawString "<"
-               else return ()
-             if length skipLeft > length skipBoth
-                then do moveCursor y (w-1)
-                        drawString ">"
-               else return ()
-                    
+             when (scrollX > 0) $
+               do moveCursor y leftMargin
+                  drawString "<"
+             when ((length skipLeft) > (length skipBoth)) $
+               do moveCursor y (w-1)
+                  drawString ">"
              moveCursor y 0
              setColor $ sColour s
              lineHead
@@ -319,7 +306,8 @@ drawEditor mvS
                               | hasChar l = do setColor $ sColour s
                                                moveCursor y 0
                                                drawString " │"
-                              | otherwise = return ()
+                              | otherwise = do moveCursor y 0
+                                               drawString "  "
         drawRMS s w y l | lActive l = do let rmsMax = (length rmsBlocks) - 1
                                              id = fromJust $ lTag l
                                              rmsL = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2))
@@ -330,12 +318,10 @@ drawEditor mvS
                                          drawString $ str
                         | otherwise = return ()
 
-connectCircle :: IO (Maybe (Change -> IO ()))
-connectCircle =
+connectCircle :: MVar State -> Maybe String -> IO (Maybe (Change -> IO ()))
+connectCircle mvS name =
   do addr <- fromMaybe "127.0.0.1" <$> lookupEnv "CIRCLE_ADDR"
      port <- fromMaybe "6010" <$> lookupEnv "CIRCLE_PORT"
-     name <- lookupEnv "CIRCLE_NAME"
-     hPutStrLn stderr "connectcircle"
      if isJust name
        then do mChange <- newEmptyMVar 
                forkIO $ WS.runClient addr (read port) "/" (app (fromJust name) mChange)
@@ -348,12 +334,33 @@ connectCircle =
                   
                   forkIO $ forever $ do
                     msg <- WS.receiveData conn
-                    liftIO $ T.putStrLn msg
+                    circleAct conn $ T.unpack msg
+                    hPutStrLn stderr $ T.unpack msg
                   let loop = do
                         change <- takeMVar mChange
-                        WS.sendTextData conn (T.append (T.pack "/change ") $ decodeUtf8 $ A.encode $ change) >> loop
+                        WS.sendTextData conn (T.append (T.pack "/change ") $ decodeUtf8 $ A.encode change) >> loop
                   loop
                   WS.sendClose conn (T.pack "/quit")
+             circleAct conn msg | isPrefixOf "/takeSnapshot " msg =
+                                    do let snapName = fromMaybe "noname" $ stripPrefix "/takeSnapshot " msg
+                                       s <- takeMVar mvS
+                                       let code = map lText $ sCode s
+                                       now <- (realToFrac <$> getPOSIXTime)
+                                       s' <- applyChange s $ Snapshot {cWhen = now,
+                                                                       cText = code,
+                                                                       cName = Just snapName
+                                                                      }
+                                       putMVar mvS s'
+                                       return ()
+                                | isPrefixOf "/change " msg =
+                                    do let change = A.decode $ encodeUtf8 $ T.pack $ fromJust $ stripPrefix "/change " msg
+                                       if (isJust change)
+                                         then do s <- takeMVar mvS
+                                                 s' <- applyChange s $ fromJust change
+                                                 putMVar mvS s'
+                                         else (hPutStrLn stderr $ "bad change.")
+                                       return ()
+                                | otherwise = return ()
 
 initState :: [String] -> Curses (MVar State)
 initState args
@@ -373,49 +380,52 @@ initState args
                       Super -> superDirtSetters
        (d, _) <- liftIO (setters getNow)
        logFH <- liftIO openLog
-       circle <- liftIO connectCircle
-       mvS <- liftIO $ newMVar $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) ""],
-                                        sPos = (0,0),
-                                        sEditWindow = w,
-                                        sFileWindow = fileWindow,
-                                        sXWarp = 0,
-                                        sColour = fg,
-                                        sColourHilite = bg,
-                                        sColourWarn = warn,
-                                        -- sHilite = (False, []),
-                                        sHintIn = mIn,
-                                        sHintOut = mOut,
-                                        sDirt = d,
-                                        sChangeSet = [],
-                                        sLogFH = logFH,
-                                        sRMS = replicate 20 0,
-                                        sScroll = (0,0),
-                                        sCpsUtils = cpsUtils,
-                                        sMode = EditMode,
-                                        sFileChoice = FileChoice {fcPath = [],
-                                                                  fcIndex = 0,
-                                                                  fcDirs = [],
-                                                                  fcFiles = []
-                                                                 },
-                                        sCircle = circle,
-                                        sPlayback = Nothing
-                                       }
+       name <- liftIO $ lookupEnv "CIRCLE_NAME"
+       mvS <- liftIO $ newEmptyMVar
+       circle <- liftIO $ connectCircle mvS name
+       liftIO $ putMVar mvS $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) ""],
+                                     sPos = (0,0),
+                                     sEditWindow = w,
+                                     sFileWindow = fileWindow,
+                                     sXWarp = 0,
+                                     sColour = fg,
+                                     sColourHilite = bg,
+                                     sColourWarn = warn,
+                                     -- sHilite = (False, []),
+                                     sHintIn = mIn,
+                                     sHintOut = mOut,
+                                     sDirt = d,
+                                     sChangeSet = [],
+                                     sLogFH = logFH,
+                                     sRMS = replicate 20 0,
+                                     sScroll = (0,0),
+                                     sCpsUtils = cpsUtils,
+                                     sMode = EditMode,
+                                     sFileChoice = FileChoice {fcPath = [],
+                                                               fcIndex = 0,
+                                                               fcDirs = [],
+                                                               fcFiles = []
+                                                              },
+                                     sCircle = circle,
+                                     sPlayback = Nothing,
+                                     sName = name
+                                    }
        return mvS
 
 moveHome :: MVar State -> Curses ()
 moveHome mvS = do s <- liftIO (readMVar mvS)
                   let (_, x) = sPos s
-                  move mvS (0, 0-x)
+                  move mvS (0, negate x)
 
 moveEnd :: MVar State -> Curses ()
 moveEnd mvS = do s <- liftIO (readMVar mvS)
                  let (y, x) = sPos s
-                     xTo = length (lText $ (sCode s) !! y)
+                     xTo = length (lText $ sCode s !! y)
                  move mvS (0, xTo-x)
 
 move :: MVar State -> (Int, Int) -> Curses ()
 move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
-                      let maxY = (length $ sCode s) - 1
+                      let maxY = length (sCode s) - 1
                           (y,x) = sPos s
                           y' = max 0 $ min maxY (y + yd)
                           maxX | (length $ sCode s) == y' = 0
@@ -517,6 +527,7 @@ main = do installHandler sigINT Ignore Nothing
           installHandler sigPIPE Ignore Nothing
           installHandler sigHUP Ignore Nothing
           installHandler sigKILL Ignore Nothing
+          installHandler sigSTOP Ignore Nothing
           argv <- getArgs
           runCurses $ do
             setEcho False
@@ -632,9 +643,7 @@ mainLoop mvS = loop where
             ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
             updateScreen mvS (sMode s)
-            if done
-              then return ()
-              else loop
+            unless done loop
 
 updateScreen :: MVar State -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
@@ -665,6 +674,8 @@ keyCtrl mvS 'k' = killLine mvS
 keyCtrl mvS 'j' = insertBreak mvS
 
 keyCtrl mvS 'x' = eval mvS
+
+keyCtrl mvS 'h' = stopAll mvS
 
 keyCtrl mvS 'l' = fileMode mvS
 
@@ -709,6 +720,13 @@ eval mvS =
      -- updateWindow (sEditWindow s) clear
      return ()
 
+stopAll :: MVar State -> Curses ()
+stopAll mvS =
+  do liftIO $ do s <- (readMVar mvS)
+                 (sDirt s) silence
+     -- updateWindow (sEditWindow s) clear
+     return ()
+
 insertBreak :: MVar State -> Curses ()
 insertBreak mvS =
   do s <- liftIO $ takeMVar mvS
@@ -718,7 +736,7 @@ insertBreak mvS =
                  let change = (insertChange (y,x) ["",""]) {cWhen = now}
                  s' <- applyChange (s {sXWarp = 0}) change
                  putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     -- updateWindow (sEditWindow s) clear
 
 insertChar :: MVar State -> Char -> Curses ()
 insertChar mvS c =
@@ -729,7 +747,7 @@ insertChar mvS c =
                  let change = (insertChange (y,x) [[c]]) {cWhen = now}
                  s' <- applyChange (s {sXWarp = x'}) change
                  putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     -- updateWindow (sEditWindow s) clear
 
 backspaceChar :: State -> State
 backspaceChar s =
@@ -763,7 +781,7 @@ backspace mvS =
                                      ) {cWhen = now}
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     -- updateWindow (sEditWindow s) clear
 
 del :: MVar State -> Curses ()
 del mvS =
@@ -775,7 +793,7 @@ del mvS =
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     -- updateWindow (sEditWindow s) clear
 
 delAll :: MVar State -> Curses ()
 delAll mvS =
@@ -800,7 +818,7 @@ killLine mvS =
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     -- updateWindow (sEditWindow s) clear
 
 fileTime :: FilePath -> String
 fileTime fp = h ++ (':':m) ++ (':':s)
@@ -887,7 +905,7 @@ scSub = do udp <- udpServer "127.0.0.1" 0
            sendTo udp (Message "/notify" []) remote_sockaddr
            loop udp
   where loop udp = do m <- recvMessage udp
-                      putStrLn $ show m
+                      hPutStrLn stderr $ show m
                       loop udp
 
 selectedPath fc = fcPath fc ++ [selected]
@@ -899,8 +917,8 @@ startPlayback s path =
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
-         changes = catMaybes $ map (A.decode . encodeUtf8 . T.pack) ls
-         offset | (length changes) > 0 = now - (cWhen (head changes))
+         changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
+         offset | not (null changes) = now - (cWhen (head changes))
                 | otherwise = 0
          playback = Playback {pbChanges = changes,
                               pbOffset = offset
@@ -910,3 +928,8 @@ startPlayback s path =
                 }
 
 
+dumpCode :: Code -> String
+dumpCode ls = unlines $ map lText ls
+
+unDumpCode :: String -> Code
+unDumpCode s = updateTags $ map (Line Nothing) $ lines s

@@ -40,6 +40,7 @@ hintJob (mIn, mOut) =
      installHandler sigPIPE Ignore Nothing
      installHandler sigHUP Ignore Nothing
      installHandler sigKILL Ignore Nothing
+     installHandler sigSTOP Ignore Nothing
      result <- catch (do Hint.runInterpreter $ do
                            _ <- liftIO $ installHandler sigINT Ignore Nothing
                            Hint.set [languageExtensions := [OverloadedStrings]]
