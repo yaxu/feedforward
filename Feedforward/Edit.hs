@@ -66,7 +66,7 @@ data Playback = Playback {pbOffset :: Double,
                           pbChanges :: [Change]
                          }
 
-dirt = Super
+dirt = Classic
 
 playbackSpeed = 2
 
@@ -512,7 +512,8 @@ listenRMS mvS = do let port = case dirt of
          putMVar mvS $ s {sRMS = xs}
     act (Just (m@(Message "/rms" _))) =
       do s <- takeMVar mvS
-         let orbit = fromMaybe 0 $ datum_integral $ messageDatum m !! 1
+         mungeOrbit <- mungeOrbitIO
+         let orbit = mungeOrbit $ fromMaybe 0 $ datum_integral $ messageDatum m !! 1
              l = fromMaybe 0 $ datum_floating $ messageDatum m !! 3
              r = fromMaybe 0 $ datum_floating $ messageDatum m !! 5
              rms = sRMS s
@@ -876,9 +877,9 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
                               response <- liftIO $ takeMVar (sHintOut s)
-                              
+                              mungeOrbit <- mungeOrbitIO
                               let block = fromJust $ lBlock $ (sCode s) !! n
-                                  (block', ps') = act id response block
+                                  (block', ps') = act (mungeOrbit id) response block
                                   s' = setBlock n block'
                               -- hPutStrLn stderr $ show $ block
                               -- hPutStrLn stderr $ ">>>>"
@@ -895,6 +896,10 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                 l = (ls !! n) {lBlock = Just block}
                 ls' = take n ls ++ (l:(drop (n+1) ls))
 
+mungeOrbitIO :: IO (Int -> Int)
+mungeOrbitIO = do orbitOffset <- (read . fromMaybe "0") <$> lookupEnv "ORBIT_OFFSET"
+                  orbitMax <- (read . fromMaybe "4") <$> lookupEnv "ORBIT_MAX"
+                  return $ \o -> orbitOffset + (o `mod` orbitMax)
 
 activeBlocks :: Int -> Code -> [(Int, Code)]
 activeBlocks _ [] = []
