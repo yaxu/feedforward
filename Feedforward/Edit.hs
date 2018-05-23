@@ -120,7 +120,8 @@ data State = State {sCode :: Code,
                     sCircle :: Maybe (Change -> IO ()),
                     sPlayback :: Maybe Playback,
                     sName :: Maybe String,
-                    sRefresh :: Bool
+                    sRefresh :: Bool,
+                    sLastAlt :: Double
                    }
 
 topMargin    = 1 :: Integer
@@ -371,7 +372,6 @@ initState args
        updateWindow w clear
        setEcho False
        setKeypad w True
-       
        fg <- newColorID ColorWhite ColorDefault 1
        bg <- newColorID ColorBlack ColorWhite 2
        warn <- newColorID ColorWhite ColorRed 3
@@ -415,7 +415,8 @@ initState args
                                      sCircle = circle,
                                      sPlayback = Nothing,
                                      sName = name,
-                                     sRefresh = False
+                                     sRefresh = False,
+                                     sLastAlt = 0
                                     }
        return mvS
 
@@ -545,6 +546,7 @@ main = do installHandler sigINT Ignore Nothing
             render
             mainLoop mvS
 
+handleEv :: MVar State -> Mode -> Maybe Event -> Curses Bool
 handleEv mvS PlaybackMode ev =
   do let -- quit = return True
          ok = return False
@@ -564,7 +566,20 @@ handleEv mvS EditMode ev =
      -- if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
      case ev of
       Nothing -> ok
-      Just (EventCharacter x) -> keypress mvS x >> ok
+      Just (EventCharacter '\ESC') ->
+        do liftIO $ do s <- takeMVar mvS
+                       now <- (realToFrac <$> getPOSIXTime)
+                       putMVar mvS $ s {sLastAlt = now}
+           ok
+      Just (EventCharacter x) -> do isAlt <- liftIO checkAlt
+                                    keypress mvS isAlt x >> ok
+       where checkAlt = do s <- readMVar mvS
+                           now <- realToFrac <$> getPOSIXTime
+                           -- this timeout not actually necessary as
+                           -- the ESC will do this anyway, via
+                           -- setKeypad..
+                           return $ (now - (sLastAlt s)) < altTimeout
+             altTimeout = 0.02
       Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> ok
       Just (EventSpecialKey KeyDownArrow) -> move mvS (1,0) >> ok
       Just (EventSpecialKey KeyLeftArrow) -> move mvS (0,-1) >> ok
@@ -683,9 +698,20 @@ keyCtrl mvS 'j' = insertBreak mvS
 
 keyCtrl mvS 'x' = eval mvS
 
+-- deprecate?
 keyCtrl mvS 'h' = stopAll mvS
 
+keyCtrl mvS 'l' = liftIO $ modifyMVar_ mvS $ \s -> return $ s {sRefresh = True}
+
+
 keyCtrl mvS _ = return ()
+
+keyAlt mvS '\n' = eval mvS
+keyAlt mvS 'h' = stopAll mvS
+
+
+keyAlt mvS c = do liftIO $ hPutStrLn stderr $ "got Alt-" ++ [c]
+                  return ()
 
 {-
 keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
@@ -697,9 +723,9 @@ keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
 mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-topMargin) 0),fromIntegral (max (x-leftMargin) 0))
 mouse _ _ = return ()
 
-keypress mvS c | c == '\ESC' = return ()
-               | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
-               | otherwise = insertChar mvS c
+keypress mvS isAlt c | isAlt = keyAlt mvS c
+                     | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
+                     | otherwise = insertChar mvS c
   where isCtrl = ord(c) >= 1 && ord(c) <= 26
 
 
