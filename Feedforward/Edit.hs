@@ -369,6 +369,9 @@ initState :: [String] -> Curses (MVar State)
 initState args
   = do w <- defaultWindow
        updateWindow w clear
+       setEcho False
+       setKeypad w True
+       
        fg <- newColorID ColorWhite ColorDefault 1
        bg <- newColorID ColorBlack ColorWhite 2
        warn <- newColorID ColorWhite ColorRed 3
@@ -536,7 +539,6 @@ main = do installHandler sigINT Ignore Nothing
           installHandler sigTSTP Ignore Nothing
           argv <- getArgs
           runCurses $ do
-            setEcho False
             mvS <- initState argv
             liftIO $ forkIO $ listenRMS mvS
             drawEditor mvS
@@ -562,9 +564,7 @@ handleEv mvS EditMode ev =
      -- if (isJust ev) then liftIO $ hPutStrLn stderr $ "pressed: " ++ show ev else return ()
      case ev of
       Nothing -> ok
-      Just (EventCharacter x) -> if x == '\ESC'
-                                 then quit
-                                 else keypress mvS x >> ok
+      Just (EventCharacter x) -> keypress mvS x >> ok
       Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> ok
       Just (EventSpecialKey KeyDownArrow) -> move mvS (1,0) >> ok
       Just (EventSpecialKey KeyLeftArrow) -> move mvS (0,-1) >> ok
@@ -574,6 +574,8 @@ handleEv mvS EditMode ev =
       Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> ok
       Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> ok
       Just (EventSpecialKey KeyBackspace) -> backspace mvS >> ok
+      Just (EventSpecialKey (KeyFunction 2)) -> fileMode mvS >> ok
+      Just (EventSpecialKey (KeyFunction 10)) -> quit
       Just (EventMouse _ ms) -> mouse mvS ms >> ok
       Just e -> do liftIO $ hPutStrLn stderr $ show e
                    ok
@@ -683,8 +685,6 @@ keyCtrl mvS 'x' = eval mvS
 
 keyCtrl mvS 'h' = stopAll mvS
 
-keyCtrl mvS 'l' = fileMode mvS
-
 keyCtrl mvS _ = return ()
 
 {-
@@ -697,7 +697,8 @@ keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
 mouse mvS (MouseState {mouseCoordinates = (x,y,_), mouseButtons = [(1, ButtonClicked)]}) = moveTo mvS (fromIntegral (max (y-topMargin) 0),fromIntegral (max (x-leftMargin) 0))
 mouse _ _ = return ()
 
-keypress mvS c | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
+keypress mvS c | c == '\ESC' = return ()
+               | isCtrl = keyCtrl mvS (chr $ (ord c) + 96)
                | otherwise = insertChar mvS c
   where isCtrl = ord(c) >= 1 && ord(c) <= 26
 
