@@ -66,7 +66,7 @@ data Playback = Playback {pbOffset :: Double,
                           pbChanges :: [Change]
                          }
 
-dirt = Classic
+dirt = Super
 
 playbackSpeed = 2
 
