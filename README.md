@@ -31,6 +31,9 @@ After starting SuperDirt (e.g. with `SuperDirt.start`), do this:
 
 Do all this *before* starting feedforward.
 
+The VU meters will also work if you use the latest develop version of
+superdirt.
+
 ## Usage
 
 At the moment it sends a lot of info to stderr, which you'll need to
