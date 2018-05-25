@@ -45,10 +45,11 @@ data Status = Success | Error | Normal
             deriving (Show, Eq)
 
 data Block = Block {bTag :: Tag,
-                    bActive :: Bool,
                     bModified :: Bool,
                     bStatus :: Status,
-                    bPattern :: Maybe ParamPattern
+                    bPattern :: Maybe ParamPattern,
+                    bMute :: Bool,
+                    bSolo :: Bool
                    }
              deriving Show
 
@@ -73,20 +74,27 @@ playbackSpeed = 2
 lTag :: Line -> Maybe Tag
 lTag l = bTag <$> lBlock l
 
-lActive :: Line -> Bool
-lActive Line {lBlock = Just Block {bActive = a}} = a
-lActive _ = False
+lMuted :: Line -> Bool
+lMuted l = fromMaybe False $ bMute <$> lBlock l
+
+lMute :: Line -> Bool
+lMute Line {lBlock = Just Block {bMute = a}} = a
+lMute _ = False
 
 lStatus :: Line -> Maybe Status
 lStatus l = bStatus <$> lBlock l
 
 setTag :: Line -> Tag -> Line
-setTag l@Line {lBlock = (Just b)} tag = l {lBlock = Just (b {bTag = tag})}
-setTag l@Line {lBlock = Nothing} tag = l {lBlock = Just (Block {bTag = tag, bActive = True, bModified=True,
-                                                                  bStatus = Normal, bPattern = Nothing
-                                                                 }
-                                                          )
-                                           }
+setTag l@(Line {lBlock = Just b}) tag = l {lBlock = Just (b {bTag = tag})}
+setTag l@(Line {lBlock = Nothing}) tag
+  = l {lBlock = Just (Block {bTag = tag,
+                             bModified=True,
+                             bStatus = Normal, bPattern = Nothing,
+                             bMute = False,
+                             bSolo = False
+                            }
+                     )
+      }
 
 
 type CpsUtils = (Double -> IO (), Double -> IO (), IO Rational)
@@ -107,6 +115,7 @@ data State = State {sCode :: Code,
                     sColour :: ColorID,
                     sColourHilite :: ColorID,
                     sColourWarn :: ColorID,
+                    sColourShaded :: ColorID,
                     sHintIn :: MVar String,
                     sHintOut :: MVar Response,
                     sDirt :: ParamPattern -> IO (),
@@ -139,7 +148,7 @@ updateTags ls = assignTags freeTags ls'
         assignTags _ [] = []
         assignTags ids (l:ls) | lTag l == Just (-1) = setTag l (head ids):(assignTags (tail ids) ls)
                               | otherwise = l:(assignTags ids ls)
-        freeTags = [0 .. 9] \\ tagIds
+        freeTags = ([1 .. 9]++[0]) \\ tagIds
         tagIds = mapMaybe lTag ls'
         ls' = map tag toTag
         tag :: (Bool, Line) -> Line
@@ -166,7 +175,10 @@ applyChange s (change@(Change {})) = do writeLog s' change
                }
 
 applyChange s change@(Eval {}) =
-  do let blocks = activeBlocks 0 $ sCode s
+  do let blocks = unmutedBlocks $ sCode s
+         blocks' = allBlocks 0 $ sCode s
+     hPutStrLn stderr $ "unmuted blocks: " ++ show (length blocks) ++ " of " ++ show (length blocks')
+     hPutStrLn stderr $ show blocks'
      (s',ps) <- foldM evalBlock (s, []) blocks
      (sDirt s) (stack ps)
      writeLog s' change
@@ -297,7 +309,8 @@ drawEditor mvS
              setColor $ sColour s
              lineHead
              drawRMS s w (y-1) l
-               where lineHead | isJust (lTag l) = do let c | lStatus l == (Just Error) = setColor $ sColourWarn s
+               where lineHead | isJust (lTag l) = do let c | lMuted l = setColor $ sColourShaded s
+                                                           | lStatus l == (Just Error) = setColor $ sColourWarn s
                                                            | lStatus l == (Just Success) = setAttribute AttributeBold True
                                                            | otherwise = setColor $ sColour s
                                                      
@@ -312,14 +325,14 @@ drawEditor mvS
                                                drawString " │"
                               | otherwise = do moveCursor y 0
                                                drawString "  "
-        drawRMS s w y l | lActive l = do let rmsMax = (length rmsBlocks) - 1
-                                             id = fromJust $ lTag l
-                                             rmsL = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2))
-                                             rmsR = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2+1))
-                                             str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
-                                         setColor (sColour s)
-                                         moveCursor (fromIntegral y + topMargin - 1) 0
-                                         drawString $ str
+        drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
+                                              id = fromJust $ lTag l
+                                              rmsL = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2))
+                                              rmsR = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2+1))
+                                              str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
+                                          setColor (sColour s)
+                                          moveCursor (fromIntegral y + topMargin - 1) 0
+                                          drawString $ str
                         | otherwise = return ()
 
 connectCircle :: MVar State -> Maybe String -> IO (Maybe (Change -> IO ()))
@@ -374,6 +387,7 @@ initState args
        setKeypad w True
        fg <- newColorID ColorWhite ColorDefault 1
        bg <- newColorID ColorBlack ColorWhite 2
+       shade <- newColorID ColorBlack ColorBlue 2
        warn <- newColorID ColorWhite ColorRed 3
        fileWindow <- newWindow 10 20 3 3
        mIn <- liftIO newEmptyMVar
@@ -389,13 +403,14 @@ initState args
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        mvS <- liftIO $ newEmptyMVar
        circle <- liftIO $ connectCircle mvS name
-       liftIO $ putMVar mvS $ State {sCode = [Line (Just $ Block 0 True True Normal Nothing) ""],
+       liftIO $ putMVar mvS $ State {sCode = [Line Nothing ""],
                                      sPos = (0,0),
                                      sEditWindow = w,
                                      sFileWindow = fileWindow,
                                      sXWarp = 0,
                                      sColour = fg,
                                      sColourHilite = bg,
+                                     sColourShaded = shade,
                                      sColourWarn = warn,
                                      -- sHilite = (False, []),
                                      sHintIn = mIn,
@@ -709,9 +724,44 @@ keyCtrl mvS _ = return ()
 keyAlt mvS '\n' = eval mvS
 keyAlt mvS 'h' = stopAll mvS
 
+keyAlt mvS '0' = toggleMute mvS 0
+keyAlt mvS '1' = toggleMute mvS 1
+keyAlt mvS '2' = toggleMute mvS 2
+keyAlt mvS '3' = toggleMute mvS 3
+keyAlt mvS '4' = toggleMute mvS 4
+keyAlt mvS '5' = toggleMute mvS 5
+keyAlt mvS '6' = toggleMute mvS 6
+keyAlt mvS '7' = toggleMute mvS 7
+keyAlt mvS '8' = toggleMute mvS 8
+keyAlt mvS '9' = toggleMute mvS 9
+
 
 keyAlt mvS c = do liftIO $ hPutStrLn stderr $ "got Alt-" ++ [c]
                   return ()
+
+withTag :: Code -> Tag -> (Line -> Line) -> Code
+withTag [] _ _ = []
+withTag (l:ls) t f | lTag l == Just t = (f l):ls
+                   | otherwise = l:(withTag ls t f)
+
+toggleMute mvS n =
+  do liftIO $ do hPutStrLn stderr ("togglemute " ++ show n)
+                 s <- takeMVar mvS
+                 let ls = sCode s
+                     ls' = withTag ls n f
+                 putMVar mvS (s {sCode = ls'})
+     eval mvS
+       where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
+             f l = l -- can't happen
+
+
+toggleSolo mvS n =
+  liftIO $ do s <- takeMVar mvS
+              let ls = sCode s
+                  ls' = withTag ls n f
+              putMVar mvS (s {sCode = ls'})
+                where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bSolo = not (bSolo b)}}
+                      f l = l -- can't happen
 
 {-
 keyCtrl mvS c = do s <- (liftIO $ readMVar mvS)
@@ -925,16 +975,21 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
 
 mungeOrbitIO :: IO (Int -> Int)
 mungeOrbitIO = do orbitOffset <- (read . fromMaybe "0") <$> lookupEnv "ORBIT_OFFSET"
-                  orbitMax <- (read . fromMaybe "4") <$> lookupEnv "ORBIT_MAX"
+                  orbitMax <- (read . fromMaybe "10") <$> lookupEnv "ORBIT_MAX"
                   return $ \o -> orbitOffset + (o `mod` orbitMax)
 
-activeBlocks :: Int -> Code -> [(Int, Code)]
-activeBlocks _ [] = []
-activeBlocks n (l:ls) | not (hasChar l) = activeBlocks (n+1) ls
-                      | lActive l = (n,b):(activeBlocks (n+(length b)+1) ls')
-                      | otherwise = activeBlocks (n+1) ls
+hasBlock :: Line -> Bool
+hasBlock = isJust . lBlock
+
+allBlocks :: Int -> Code -> [(Int, Code)]
+allBlocks _ [] = []
+allBlocks n (l:ls) | hasBlock l = (n,b):(allBlocks (n+(length b)+1) ls')
+                   | otherwise = allBlocks (n+1) ls
   where b = takeWhile hasChar (l:ls)
         ls' = drop (length b) ls
+
+unmutedBlocks :: Code -> [(Int, Code)]
+unmutedBlocks ls = filter (not . lMuted . (!!0) . snd) $ allBlocks 0 ls
 
 scSub = do udp <- udpServer "127.0.0.1" 0
            remote_addr <- N.inet_addr "127.0.0.1"
