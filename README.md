@@ -57,6 +57,8 @@ At the time of writing..
 * There is no cut and paste yet
 * Mouse clicks position the cursor on some terminals, but it's a bit
   clunky
+* alt-0 .. alt-10 toggles patterns on and off
+
 
 By default, feedforward will work with SuperDirt, running on the same
 computer. To switch between Classic dirt and SuperDirt, edit
