@@ -1,12 +1,6 @@
--- This file has been generated from package.yaml by hpack version 0.20.0.
---
--- see: https://github.com/sol/hpack
---
--- hash: 997ed186d08ff264c26ba5714b27983ffb7c84c2a307fc559d44c6043adc7f74
-
 name:           feedforward
 version:        0.0.1
-copyright:      2018 Author name here
+copyright:      2018 Alex McLean and contributors
 license-file:   LICENSE
 build-type:     Simple
 cabal-version:  >= 1.10
