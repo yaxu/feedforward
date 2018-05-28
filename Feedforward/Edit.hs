@@ -327,8 +327,8 @@ drawEditor mvS
                                                drawString "  "
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
-                                              rmsL = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2))
-                                              rmsR = min rmsMax $ floor $ 500 * ((sRMS s) !! (id*2+1))
+                                              rmsL = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*2))
+                                              rmsR = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*2+1))
                                               str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
