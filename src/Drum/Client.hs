@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Client where
+module Drum.Client where
 
 import           Control.Concurrent
 import           Control.Concurrent.MVar

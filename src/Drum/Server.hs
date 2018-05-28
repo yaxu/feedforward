@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Server where
+module Drum.Server where
 
 import qualified Change                  as C
 import           Control.Concurrent
