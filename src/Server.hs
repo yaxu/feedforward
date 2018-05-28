@@ -1,25 +1,30 @@
 -- Released under terms of GNU Public License version 3
 -- (c) Alex McLean 2017
 
-{-# LANGUAGE OverloadedStrings, FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
-module Drum.Server where
+module Server where
 
-import Control.Exception (try)
-import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import qualified Network.WebSockets as WS
-import Data.List
-import Data.Maybe
-import Control.Concurrent
-import Control.Concurrent.MVar
-import System.Directory
-import System.FilePath
-import System.IO
-import Control.Monad (when)
-import Control.Monad.Trans (liftIO)
-import Data.Unique
+import qualified Change                  as C
+import           Control.Concurrent
+import           Control.Concurrent.MVar
+import           Control.Exception       (try)
+import           Control.Monad           (when)
+import           Control.Monad.Trans     (liftIO)
+import qualified Data.Aeson              as A
+import           Data.List
+import           Data.Maybe
+import           Data.Text               (Text)
+import qualified Data.Text.IO            as T
+import           Data.Text.Lazy          (Text)
+import qualified Data.Text.Lazy          as T
+import           Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Unique
+import qualified Network.WebSockets      as WS
+import           System.Directory
+import           System.FilePath
+import           System.IO
 
 -- import Data.Ratio
 -- import System.Process
@@ -31,12 +36,12 @@ import Data.Unique
 
 port = 6010
 
-data Client = Client {cName :: String,
+data Client = Client {cName         :: String,
                       cServerThread :: ThreadId,
-                      cSender :: String -> IO (),
-                      cFH :: Maybe Handle,
-                      cConn :: WS.Connection,
-                      cId :: Unique
+                      cSender       :: String -> IO (),
+                      cFN           :: Maybe String,
+                      cConn         :: WS.Connection,
+                      cId           :: Unique
                      }
 
 wsSend :: WS.Connection -> IO (ThreadId, String -> IO())
@@ -61,13 +66,13 @@ run = do
     (senderThreadId, sender) <- wsSend conn
 
     sender $ "/welcome"
-    
+
     WS.forkPingThread conn 30
     uniqueId <- liftIO newUnique
     let client = Client {cName = "anonymous",
                          cServerThread = senderThreadId,
                          cSender = sender,
-                         cFH = Nothing,
+                         cFN = Nothing,
                          cConn = conn,
                          cId = uniqueId
                         }
@@ -101,11 +106,8 @@ updateClient cs c = c:(removeClient cs c)
 close :: MVar [Client] -> Client -> String -> IO ()
 close mClients client msg = do
   putStrLn ("connection closed: " ++ msg)
-  let fh = cFH client
   cs <- takeMVar mClients
   putMVar mClients $ removeClient cs client
-  when (isJust fh) $ do
-    hClose $ fromJust fh
 -- hush = mapM_ ($ Tidal.silence)
 
 -- TODO: proper parsing..
@@ -115,7 +117,8 @@ takeNumbers xs = (takeWhile f xs, dropWhile (== ' ') $ dropWhile f xs)
 
 commands = [("name", act_name),
             ("change", act_change),
-            ("takeSnapshots", act_takeSnapshots)
+            ("takeSnapshots", act_takeSnapshots),
+            ("loadSnapshot", act_loadSnapshot)
            {-("play", act_play),
             ("record", act_record),
             ("typecheck", act_typecheck) ,
@@ -154,13 +157,12 @@ act_name param _ client conn =
 
 act_change :: String -> MVar [Client] -> Client -> WS.Connection -> IO (Client)
 act_change param _ client conn =
-  do fh <- getFH (cFH client)
+  do fh <- getFH
      hPutStrLn fh $ "//"
      hPutStrLn fh param
-     hFlush fh
-     return (client {cFH = Just fh})
-       where getFH (Just fh) = return fh
-             getFH Nothing =
+     hClose fh
+     return (client {cFN = Just fn})
+       where getFH =
                do createDirectoryIfMissing True logDirectory
                   fh <- openFile fn AppendMode
                   hPutStrLn fh $ "// connect"
@@ -175,5 +177,31 @@ act_takeSnapshots param mClients client conn =
      cs <- readMVar mClients
      mapM_ (\conn -> WS.sendTextData conn (T.pack $ "/takeSnapshot " ++ param)) $ map cConn cs
      return $ client
+
+act_loadSnapshot :: String -> MVar [Client] -> Client -> WS.Connection -> IO (Client)
+act_loadSnapshot param mClients client conn =
+  do putStrLn $ "loadSnapshot [" ++ param ++ "]."
+     cs <- readMVar mClients
+     mapM_ loadSnapshot cs
+     return $ client
+       where loadSnapshot c
+               = do let name = cName c
+                        fn = cFN c
+                    when (isJust fn) $
+                      do fh <- openFile (fromJust fn) ReadMode
+                         ls <- hGetContents fh
+                         let results = catMaybes $ catMaybes $ map (getSnapshot param) (lines ls)
+                         putStrLn $ "found: " ++ show results
+                         when (not $ null results) $
+                           do let msg = decodeUtf8 $ A.encode $ last results
+                              WS.sendTextData (cConn c) (T.append (T.pack $ "/change ") msg)
+                         hClose fh
+             getSnapshot _ ('/':_) = Nothing
+             getSnapshot snapName l = do let maybeChange = A.decode $ encodeUtf8 $ T.pack l
+                                         return $ checkChange maybeChange
+                                           where checkChange :: Maybe C.Change -> Maybe C.Change
+                                                 checkChange (Just c@(C.Snapshot {C.cName = Just snapName'})) | snapName == snapName' = Just $ c {C.cWhen = -1}
+                                                 checkChange _ = Nothing
+
 
 

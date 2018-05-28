@@ -1,60 +1,64 @@
-module Feedforward.Edit where
-  
+module Edit where
+
 {- Feedforward (c) Alex McLean 2018
    Text editor for TidalCycles
    https://github.com/yaxu/feedforward
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-import Control.Concurrent (forkIO, ThreadId, killThread)
-import Control.Concurrent.MVar
-import Control.Monad (foldM, filterM, forever, when, unless)
-import Control.Monad.IO.Class
-import Data.Char
-import Data.List (intercalate, (\\), elemIndex, inits, sort, isPrefixOf, stripPrefix)
-import Data.Maybe (fromMaybe, catMaybes, isJust, fromJust, mapMaybe)
-import Data.Time
-import Data.Time.Clock.POSIX
-import Data.Time.Format
-import Sound.OSC.FD
-import Sound.Tidal.Context (superDirtSetters, dirtSetters, ParamPattern, cpsUtils, stack, orbit, (#), cpsUtils', silence)
-import System.Directory
-import System.FilePath
-import System.IO
-import System.Posix.Process
-import System.Posix.Signals
-import System.Environment (getArgs,lookupEnv)
-import UI.NCurses
-import Text.Printf
-import qualified Network.Socket as N
-import qualified Network.WebSockets as WS
-import Data.Text.Lazy.Encoding (decodeUtf8,encodeUtf8)
-import Data.Text.Lazy (Text)
-import qualified Data.Text.Lazy as T
-import qualified Data.Text.IO as T
+import           Control.Concurrent      (ThreadId, forkIO, killThread)
+import           Control.Concurrent.MVar
+import           Control.Monad           (filterM, foldM, forever, unless, when)
+import           Control.Monad.IO.Class
+import           Data.Char
+import           Data.List               (elemIndex, inits, intercalate,
+                                          isPrefixOf, sort, stripPrefix, (\\))
+import           Data.Maybe              (catMaybes, fromJust, fromMaybe,
+                                          isJust, mapMaybe)
+import qualified Data.Text.IO            as T
+import           Data.Text.Lazy          (Text)
+import qualified Data.Text.Lazy          as T
+import           Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Time
+import           Data.Time.Clock.POSIX
+import           Data.Time.Format
+import qualified Network.Socket          as N
+import qualified Network.WebSockets      as WS
+import           Sound.OSC.FD
+import           Sound.Tidal.Context     (ParamPattern, cpsUtils, cpsUtils',
+                                          dirtSetters, orbit, silence, stack,
+                                          superDirtSetters, ( # ))
+import           System.Directory
+import           System.Environment      (getArgs, lookupEnv)
+import           System.FilePath
+import           System.IO
+import           System.Posix.Process
+import           System.Posix.Signals
+import           Text.Printf
+import           UI.NCurses
 
-import qualified Data.Aeson as A
-import GHC.Generics
+import qualified Data.Aeson              as A
+import           GHC.Generics
 
-import Feedforward.TidalHint
-import Feedforward.Change
+import           Change
+import           TidalHint
 
 type Tag = Int
 
 data Status = Success | Error | Normal
             deriving (Show, Eq)
 
-data Block = Block {bTag :: Tag,
+data Block = Block {bTag      :: Tag,
                     bModified :: Bool,
-                    bStatus :: Status,
-                    bPattern :: Maybe ParamPattern,
-                    bMute :: Bool,
-                    bSolo :: Bool
+                    bStatus   :: Status,
+                    bPattern  :: Maybe ParamPattern,
+                    bMute     :: Bool,
+                    bSolo     :: Bool
                    }
              deriving Show
 
 data Line = Line {lBlock :: Maybe Block,
-                  lText :: String
+                  lText  :: String
                  }
              deriving Show
 
@@ -63,7 +67,7 @@ type Code = [Line]
 data Dirt = Classic | Super
           deriving Eq
 
-data Playback = Playback {pbOffset :: Double,
+data Playback = Playback {pbOffset  :: Double,
                           pbChanges :: [Change]
                          }
 
@@ -79,7 +83,7 @@ lMuted l = fromMaybe False $ bMute <$> lBlock l
 
 lMute :: Line -> Bool
 lMute Line {lBlock = Just Block {bMute = a}} = a
-lMute _ = False
+lMute _                                      = False
 
 lStatus :: Line -> Maybe Status
 lStatus l = bStatus <$> lBlock l
@@ -101,36 +105,36 @@ type CpsUtils = (Double -> IO (), Double -> IO (), IO Rational)
 
 data Mode = EditMode | FileMode | PlaybackMode
 
-data FileChoice = FileChoice {fcPath :: [FilePath],
+data FileChoice = FileChoice {fcPath  :: [FilePath],
                               fcIndex :: Int,
-                              fcDirs :: [FilePath],
+                              fcDirs  :: [FilePath],
                               fcFiles :: [FilePath]
                              }
 
-data State = State {sCode :: Code,
-                    sPos :: Pos,
-                    sXWarp :: Int,
-                    sEditWindow :: Window,
-                    sFileWindow :: Window,
-                    sColour :: ColorID,
+data State = State {sCode         :: Code,
+                    sPos          :: Pos,
+                    sXWarp        :: Int,
+                    sEditWindow   :: Window,
+                    sFileWindow   :: Window,
+                    sColour       :: ColorID,
                     sColourHilite :: ColorID,
-                    sColourWarn :: ColorID,
+                    sColourWarn   :: ColorID,
                     sColourShaded :: ColorID,
-                    sHintIn :: MVar String,
-                    sHintOut :: MVar Response,
-                    sDirt :: ParamPattern -> IO (),
-                    sChangeSet :: ChangeSet,
-                    sLogFH :: Handle,
-                    sRMS :: [Float],
-                    sScroll :: (Int,Int),
-                    sCpsUtils :: CpsUtils,
-                    sMode :: Mode,
-                    sFileChoice :: FileChoice,
-                    sCircle :: Maybe (Change -> IO ()),
-                    sPlayback :: Maybe Playback,
-                    sName :: Maybe String,
-                    sRefresh :: Bool,
-                    sLastAlt :: Double
+                    sHintIn       :: MVar String,
+                    sHintOut      :: MVar Response,
+                    sDirt         :: ParamPattern -> IO (),
+                    sChangeSet    :: ChangeSet,
+                    sLogFH        :: Handle,
+                    sRMS          :: [Float],
+                    sScroll       :: (Int,Int),
+                    sCpsUtils     :: CpsUtils,
+                    sMode         :: Mode,
+                    sFileChoice   :: FileChoice,
+                    sCircle       :: Maybe (Change -> IO ()),
+                    sPlayback     :: Maybe Playback,
+                    sName         :: Maybe String,
+                    sRefresh      :: Bool,
+                    sLastAlt      :: Double
                    }
 
 topMargin    = 1 :: Integer
@@ -260,7 +264,7 @@ drawFooter :: State -> Curses ()
 drawFooter s =
   do mc <- maxColor
      let name = fromMaybe "" ((\x -> "[" ++ x ++ "] ") <$> sName s)
-                                  
+
      updateWindow (sEditWindow s) $
        do (h,w) <- windowSize
           moveCursor (h-2) 0
@@ -313,7 +317,7 @@ drawEditor mvS
                                                            | lStatus l == (Just Error) = setColor $ sColourWarn s
                                                            | lStatus l == (Just Success) = setAttribute AttributeBold True
                                                            | otherwise = setColor $ sColour s
-                                                     
+
                                                      moveCursor y 0
                                                      c
                                                      drawString $ (show $ fromJust (lTag l))
@@ -340,7 +344,7 @@ connectCircle mvS name =
   do addr <- fromMaybe "127.0.0.1" <$> lookupEnv "CIRCLE_ADDR"
      port <- fromMaybe "6010" <$> lookupEnv "CIRCLE_PORT"
      if isJust name
-       then do mChange <- newEmptyMVar 
+       then do mChange <- newEmptyMVar
                forkIO $ WS.runClient addr (read port) "/" (app (fromJust name) mChange)
                return $ Just $ putMVar (mChange :: MVar Change)
        else (return Nothing)
@@ -348,7 +352,7 @@ connectCircle mvS name =
                do -- hPutStrLn stderr "Connected!"
                   let msg = T.pack $ "/name " ++ name
                   WS.sendTextData conn msg
-                  
+
                   forkIO $ forever $ do
                     msg <- WS.receiveData conn
                     circleAct conn $ T.unpack msg
@@ -397,7 +401,7 @@ initState args
        cpsUtils <- liftIO cpsUtils'
        let setters = case dirt of
                       Classic -> dirtSetters
-                      Super -> superDirtSetters
+                      Super   -> superDirtSetters
        (d, _) <- liftIO (setters getNow)
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
@@ -496,32 +500,32 @@ defaultLogPath = do t <- getZonedTime
                     let i = elemIndex False exists
                     return $ case i of
                       Nothing -> last paths
-                      Just 0 -> []
-                      Just n -> paths !! (n-1)
+                      Just 0  -> []
+                      Just n  -> paths !! (n-1)
 
 pathContents path = do let fullPath = joinPath (logDirectory:path)
                        all <- listDirectory fullPath
                        files <- filterM (doesFileExist . (fullPath </>)) all
                        dirs <- filterM (doesDirectoryExist . (fullPath </>)) all
                        return (dirs,files)
-                       
+
 
 writeLog :: State -> Change -> IO ()
 writeLog s c = do hPutStrLn (sLogFH s) (T.unpack $ decodeUtf8 $ A.encode $ c)
                   hFlush (sLogFH s)
                   sendCircle (sCircle s)
-                    where sendCircle Nothing = return ()
+                    where sendCircle Nothing  = return ()
                           sendCircle (Just f) = f c
 
 listenRMS :: MVar State -> IO ()
 listenRMS mvS = do let port = case dirt of
-                               Super -> 0
+                               Super   -> 0
                                Classic -> 6010
                    udp <- udpServer "127.0.0.1" port
                    subscribe udp
                    loop udp
   where
-    loop udp = 
+    loop udp =
       do m <- recvMessage udp
          act m
          loop udp
@@ -651,7 +655,7 @@ handleEv mvS FileMode (Just (EventCharacter x))
                      liftIO $ putMVar mvS $ s {sMode = EditMode}
                      ok
   | otherwise = ok
-                
+
 handleEv mvS FileMode (Just e) = do liftIO $ hPutStrLn stderr $ show e
                                     ok
 fcMove mvS d = do s <- liftIO $ takeMVar mvS
@@ -791,7 +795,7 @@ cursorContext' s (y,x) =
          postL = drop (y+1) ls
          preX = take x $ lText l
          postX = drop x $ lText l
-     
+
 
 eval :: MVar State -> Curses ()
 eval mvS =
@@ -925,7 +929,7 @@ fileMode mvS = do s <- liftIO $ takeMVar mvS
                   liftIO $ putMVar mvS s'
                   drawDirs mvS
 
--- readDir fc 
+-- readDir fc
 
 drawDirs:: MVar State -> Curses ()
 drawDirs mvS
@@ -1004,7 +1008,7 @@ selectedPath fc = fcPath fc ++ [selected]
   where selected = (fcDirs fc ++ fcFiles fc) !! fcIndex fc
 
 startPlayback :: State -> FilePath -> IO State
-startPlayback s path = 
+startPlayback s path =
   do now <- (realToFrac <$> getPOSIXTime)
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh

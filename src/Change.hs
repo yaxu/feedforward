@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Feedforward.Change where
+module Change where
 
-import GHC.Generics
-import qualified Data.Aeson as A
+import qualified Data.Aeson   as A
+import           GHC.Generics
 
 {- Fires every time the content of the editor is changed. The changeObj
 is a {from, to, text, removed, origin} object containing information
@@ -19,16 +19,16 @@ an operation, before the DOM updates happen.
 
 type Pos = (Int, Int)
 
-data Change = Change {cFrom :: Pos,
-                      cTo :: Pos,
-                      cText :: [String],
+data Change = Change {cFrom    :: Pos,
+                      cTo      :: Pos,
+                      cText    :: [String],
                       cRemoved :: [String],
-                      cOrigin :: String,
-                      cWhen :: Double,
-                      cNewPos :: Pos
+                      cOrigin  :: String,
+                      cWhen    :: Double,
+                      cNewPos  :: Pos
                      }
             | Eval {cWhen :: Double}
-            | Move {cWhen :: Double,
+            | Move {cWhen   :: Double,
                     cNewPos :: Pos
                    }
             | Snapshot {cName :: Maybe String,
