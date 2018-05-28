@@ -958,6 +958,7 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
                               response <- liftIO $ takeMVar (sHintOut s)
+                              liftIO $ hPutStrLn stderr $ "Response: " ++ show response
                               mungeOrbit <- mungeOrbitIO
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act (mungeOrbit id) response block
