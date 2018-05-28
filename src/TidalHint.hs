@@ -1,16 +1,16 @@
-module Feedforward.TidalHint where
+module TidalHint where
 
-import Sound.Tidal.Context
-import System.IO
-import System.Posix.Signals
-import Language.Haskell.Interpreter as Hint
-import Control.Exception
+import           Control.Exception
+import           Language.Haskell.Interpreter as Hint
+import           Sound.Tidal.Context
+import           System.IO
+import           System.Posix.Signals
 
 data Response = HintOK {parsed :: ParamPattern}
               | HintError {errorMessage :: String}
 
 instance Show Response where
-  show (HintOK p) = "Ok: " ++ show p
+  show (HintOK p)    = "Ok: " ++ show p
   show (HintError s) = "Error: " ++ s
 
 {-
@@ -51,7 +51,7 @@ hintJob (mIn, mOut) =
                (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
      let response = case result of
           Left err -> HintError (parseError err)
-          Right p -> HintOK p -- can happen
+          Right p  -> HintOK p -- can happen
          parseError (UnknownError s) = "Unknown error: " ++ s
          parseError (WontCompile es) = "Compile error: " ++ (intercalate "\n" (Prelude.map errMsg es))
          parseError (NotAllowed s) = "NotAllowed error: " ++ s

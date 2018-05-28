@@ -1,0 +1,69 @@
+-- This file has been generated from package.yaml by hpack version 0.20.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 997ed186d08ff264c26ba5714b27983ffb7c84c2a307fc559d44c6043adc7f74
+
+name:           feedforward
+version:        0.0.1
+copyright:      2018 Author name here
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+
+library
+  hs-source-dirs:
+      src
+  build-depends:
+      aeson
+    , base
+    , directory
+    , filepath
+    , hint
+    , hosc
+    , mtl
+    , ncurses
+    , network
+    , text
+    , tidal
+    , time
+    , unix
+    , websockets
+  exposed-modules:
+      Change
+      Client
+      Edit
+      Main
+      Server
+      TidalHint
+  other-modules:
+      Paths_feedforward
+  default-language: Haskell2010
+
+executable feedforward
+  main-is: Main.hs
+  hs-source-dirs:
+      src
+  build-depends:
+      aeson
+    , base
+    , directory
+    , filepath
+    , hint
+    , hosc
+    , mtl
+    , ncurses
+    , network
+    , text
+    , tidal
+    , time
+    , unix
+    , websockets
+  other-modules:
+      Change
+      Client
+      Edit
+      Server
+      TidalHint
+      Paths_feedforward
+  default-language: Haskell2010

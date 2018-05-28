@@ -1,5 +1,5 @@
 module Main where
 
-import Drum.Server
+import           Server
 
 main = run
