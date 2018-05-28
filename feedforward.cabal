@@ -25,10 +25,10 @@ library
     , websockets
   exposed-modules:
       Change
-      Client
+      -- Client
       Edit
       Main
-      Server
+      -- Server
       TidalHint
   other-modules:
       Paths_feedforward
@@ -38,6 +38,7 @@ executable feedforward
   main-is: Main.hs
   hs-source-dirs:
       src
+  ghc-options: -dynamic
   build-depends:
       aeson
     , base
@@ -55,9 +56,9 @@ executable feedforward
     , websockets
   other-modules:
       Change
-      Client
+      -- Client
       Edit
-      Server
+      -- Server
       TidalHint
       Paths_feedforward
   default-language: Haskell2010
