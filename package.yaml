@@ -1,0 +1,29 @@
+name:                feedforward
+
+version: "0.0.1"
+copyright:           "2018 Author name here"
+
+executable:
+  main:        Main.hs
+  source-dirs: 
+    src
+  
+library:
+  source-dirs: 
+    src
+
+dependencies:
+  - aeson
+  - base
+  - directory
+  - filepath
+  - hint
+  - hosc
+  - mtl
+  - ncurses
+  - network
+  - time
+  - text
+  - tidal
+  - websockets
+  - unix
