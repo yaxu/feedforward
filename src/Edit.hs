@@ -204,18 +204,19 @@ withLineText :: Line -> (String -> String)  -> Line
 withLineText (Line tag text) f = Line tag (f text )
 
 applyInput :: State -> Change -> Code
-applyInput s change = preL ++ added ++ postL
+applyInput s change = preL ++ addedWithBlock ++ postL
   where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext' s (cFrom change)
         added :: Code
         added = addToHead preX $ addToLast postX $ map (Line Nothing) (cText change)
+        addedWithBlock = ((head added) {lBlock = lBlock l}):(tail added)
         addToHead :: String -> Code -> Code
         addToHead x xs = (withLineText (head xs) (x ++)) : tail xs
         addToLast :: String -> Code -> Code
         addToLast x xs = init xs ++ [withLineText (last xs) (++ x)]
 
 applyDelete :: State -> Change -> Code
-applyDelete s change = preL ++ ((Line Nothing $ preX ++ postX):postL)
-  where (_, _, preL, _, _, preX, _) = cursorContext' s (cFrom change)
+applyDelete s change = preL ++ ((Line (lBlock l) $ preX ++ postX):postL)
+  where (_, _, preL, l, _, preX, _) = cursorContext' s (cFrom change)
         (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
 
 insertChange :: Pos -> [String] -> Change
