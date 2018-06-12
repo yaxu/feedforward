@@ -6,7 +6,7 @@ module Edit where
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-import           Control.Concurrent      (ThreadId, forkIO, killThread)
+import           Control.Concurrent      (ThreadId, forkIO, killThread, threadDelay)
 import           Control.Concurrent.MVar
 import           Control.Monad           (filterM, foldM, forever, unless, when)
 import           Control.Monad.IO.Class
@@ -93,7 +93,8 @@ setTag l@(Line {lBlock = Just b}) tag = l {lBlock = Just (b {bTag = tag})}
 setTag l@(Line {lBlock = Nothing}) tag
   = l {lBlock = Just (Block {bTag = tag,
                              bModified=True,
-                             bStatus = Normal, bPattern = Nothing,
+                             bStatus = Normal,
+                             bPattern = Nothing,
                              bMute = False,
                              bSolo = False
                             }
@@ -196,6 +197,22 @@ applyChange s change@(Snapshot {}) =
                  sRefresh = True
                 }
 
+applyChange s change@(Move {}) =
+  do writeLog s change
+     return $ s {sPos = cNewPos change, sXWarp = cXWarp change}
+
+applyChange s change@(MuteToggle {}) =
+  do writeLog s change
+     let ls = sCode s
+         ls' = withTag ls (cOrbit change) f
+         s' = s {sCode = ls'}
+     return s'
+       where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
+             f l = l -- can't happen
+
+
+
+
 applyChange s _ =
   do hPutStrLn stderr $ "unhandled change type"
      return s
@@ -233,7 +250,7 @@ insertChange (y,x) str = Change {cFrom = (y,x),
            | otherwise = length $ last str
 
 evalChange :: Change
-evalChange = Eval {cWhen = -1}
+evalChange = Eval {cWhen = -1, cAll = True}
 
 deleteChange :: Pos -> Pos -> [String] -> Change
 deleteChange from to removed = Change {cFrom = from,
@@ -398,8 +415,8 @@ initState args
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
-       (_, getNow) <- liftIO cpsUtils
-       cpsUtils <- liftIO cpsUtils'
+       cu@(_,_,getNow) <- liftIO cpsUtils'
+       liftIO $ threadDelay 250000
        let setters = case dirt of
                       Classic -> dirtSetters
                       Super   -> superDirtSetters
@@ -425,7 +442,7 @@ initState args
                                      sLogFH = logFH,
                                      sRMS = replicate 20 0,
                                      sScroll = (0,0),
-                                     sCpsUtils = cpsUtils,
+                                     sCpsUtils = cu,
                                      sMode = EditMode,
                                      sFileChoice = FileChoice {fcPath = [],
                                                                fcIndex = 0,
@@ -452,7 +469,7 @@ moveEnd mvS = do s <- liftIO (readMVar mvS)
                  move mvS (0, xTo-x)
 
 move :: MVar State -> (Int, Int) -> Curses ()
-move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
+move mvS (yd,xd) = do s <- liftIO (readMVar mvS)
                       let maxY = length (sCode s) - 1
                           (y,x) = sPos s
                           y' = max 0 $ min maxY (y + yd)
@@ -462,11 +479,7 @@ move mvS (yd,xd) = do s <- liftIO (takeMVar mvS)
                           xw | xd /= 0 = x'
                              | otherwise = sXWarp s
                           x'' = min xw maxX
-                      liftIO $ putMVar mvS $ s {sPos = (y',x''),
-                                                sXWarp = xw
-                                                -- sHilite = (False, [])
-                                               }
-
+                      moveTo mvS (y',x'')
 
 moveTo :: MVar State -> (Int, Int) -> Curses ()
 moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
@@ -474,10 +487,13 @@ moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
                           y' = min maxY y
                           maxX = length $ lText $ (sCode s) !! y'
                           x' = min maxX x
-                      liftIO $ putMVar mvS $ s {sPos = (y',x'),
-                                                sXWarp = x'
-                                                -- sHilite = (False, [])
+                      liftIO $ do now <- (realToFrac <$> getPOSIXTime)
+                                  let c = Move {cWhen = now,
+                                                cNewPos = (y',x'),
+                                                cXWarp = x'
                                                }
+                                  s' <- applyChange s c
+                                  putMVar mvS s'
 
 openLog :: IO Handle
 openLog = do t <- getZonedTime
@@ -599,7 +615,7 @@ handleEv mvS EditMode ev =
                            -- the ESC will do this anyway, via
                            -- setKeypad..
                            return $ (now - (sLastAlt s)) < altTimeout
-             altTimeout = 0.02
+             altTimeout = 0.2
       Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> ok
       Just (EventSpecialKey KeyDownArrow) -> move mvS (1,0) >> ok
       Just (EventSpecialKey KeyLeftArrow) -> move mvS (0,-1) >> ok
@@ -740,7 +756,6 @@ keyAlt mvS '7' = toggleMute mvS 7
 keyAlt mvS '8' = toggleMute mvS 8
 keyAlt mvS '9' = toggleMute mvS 9
 
-
 keyAlt mvS c = do liftIO $ hPutStrLn stderr $ "got Alt-" ++ [c]
                   return ()
 
@@ -750,15 +765,15 @@ withTag (l:ls) t f | lTag l == Just t = (f l):ls
                    | otherwise = l:(withTag ls t f)
 
 toggleMute mvS n =
-  do liftIO $ do hPutStrLn stderr ("togglemute " ++ show n)
-                 s <- takeMVar mvS
-                 let ls = sCode s
-                     ls' = withTag ls n f
-                 putMVar mvS (s {sCode = ls'})
-     eval mvS
-       where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
-             f l = l -- can't happen
-
+  do liftIO $ do s <- takeMVar mvS
+                 now <- liftIO $ (realToFrac <$> getPOSIXTime)  
+                 s' <- applyChange s $ MuteToggle {cWhen = now,
+                                                   cOrbit = n
+                                                  }
+                 s'' <- applyChange s' $ Eval {cWhen = now,
+                                               cAll = True
+                                              }
+                 putMVar mvS s''
 
 toggleSolo mvS n =
   liftIO $ do s <- takeMVar mvS
@@ -805,14 +820,12 @@ eval mvS =
                  let change = evalChange {cWhen = now}
                  s' <- applyChange s change
                  putMVar mvS s'
-     -- updateWindow (sEditWindow s) clear
      return ()
 
 stopAll :: MVar State -> Curses ()
 stopAll mvS =
   do liftIO $ do s <- (readMVar mvS)
                  (sDirt s) silence
-     -- updateWindow (sEditWindow s) clear
      return ()
 
 insertBreak :: MVar State -> Curses ()
@@ -824,7 +837,6 @@ insertBreak mvS =
                  let change = (insertChange (y,x) ["",""]) {cWhen = now}
                  s' <- applyChange (s {sXWarp = 0}) change
                  putMVar mvS s'
-     -- updateWindow (sEditWindow s) clear
 
 insertChar :: MVar State -> Char -> Curses ()
 insertChar mvS c =
@@ -835,7 +847,6 @@ insertChar mvS c =
                  let change = (insertChange (y,x) [[c]]) {cWhen = now}
                  s' <- applyChange (s {sXWarp = x'}) change
                  putMVar mvS s'
-     -- updateWindow (sEditWindow s) clear
 
 backspaceChar :: State -> State
 backspaceChar s =
@@ -869,7 +880,6 @@ backspace mvS =
                                      ) {cWhen = now}
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
-     -- updateWindow (sEditWindow s) clear
 
 del :: MVar State -> Curses ()
 del mvS =
@@ -881,7 +891,6 @@ del mvS =
                 | otherwise = Just $ (deleteChange (y,x) (y+1,0) ["",""]) {cWhen = now}
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
-     -- updateWindow (sEditWindow s) clear
 
 delAll :: MVar State -> Curses ()
 delAll mvS =
@@ -906,7 +915,6 @@ killLine mvS =
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
-     -- updateWindow (sEditWindow s) clear
 
 fileTime :: FilePath -> String
 fileTime fp = h ++ (':':m) ++ (':':s)
