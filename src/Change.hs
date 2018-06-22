@@ -27,10 +27,17 @@ data Change = Change {cFrom    :: Pos,
                       cWhen    :: Double,
                       cNewPos  :: Pos
                      }
-            | Eval {cWhen :: Double}
-            | Move {cWhen   :: Double,
-                    cNewPos :: Pos
+            | Eval {cWhen :: Double,
+                    -- eval everything or just the local block
+                    cAll :: Bool
                    }
+            | Move {cWhen   :: Double,
+                    cNewPos :: Pos,
+                    cXWarp :: Int
+                   }
+            | MuteToggle {cWhen   :: Double,
+                          cOrbit :: Int
+                         }
             | Snapshot {cName :: Maybe String,
                         cWhen :: Double,
                         cText :: [String]
