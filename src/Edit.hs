@@ -625,8 +625,8 @@ handleEv mvS EditMode ev =
       Just (EventSpecialKey KeyEnter) -> insertBreak mvS >> ok
       Just (EventSpecialKey KeyDeleteCharacter) -> del mvS >> ok
       Just (EventSpecialKey KeyBackspace) -> backspace mvS >> ok
-      Just (EventSpecialKey (KeyFunction 2)) -> fileMode mvS >> ok
-      Just (EventSpecialKey (KeyFunction 10)) -> quit
+      Just (EventSpecialKey (KeyFunction 2)) -> unlessKiosk $ fileMode mvS >> ok
+      Just (EventSpecialKey (KeyFunction 10)) -> unlessKiosk quit
       Just (EventMouse _ ms) -> mouse mvS ms >> ok
       Just e -> do liftIO $ hPutStrLn stderr $ show e
                    ok
@@ -683,6 +683,10 @@ fcMove mvS d = do s <- liftIO $ takeMVar mvS
                   liftIO $ putMVar mvS $
                     s {sFileChoice = fileChoice {fcIndex = i}}
                   return ()
+
+unlessKiosk :: Curses Bool -> Curses Bool
+unlessKiosk f = do kiosk <- liftIO $ isJust <$> lookupEnv "KIOSK"
+                   if kiosk then ok else f
 
 quit :: Curses Bool
 quit = return True

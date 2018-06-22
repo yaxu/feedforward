@@ -23,8 +23,8 @@ runJob job = do putStrLn $ "Parsing: " ++ job
                 return response
 -}
 
-libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum"
-        -- ,"Sound.Tidal.Simple"
+libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum",
+        "Sound.Tidal.Simple"
        ]
 
 {-
@@ -64,15 +64,23 @@ hintJob (mIn, mOut) =
      putMVar mOut response
      hintJob (mIn, mOut)
      where hintLoop = do s <- liftIO (readMVar mIn)
-                         -- check <- typeChecks s
+                         t <- Hint.typeChecksWithDetails s
                          --interp check s
-                         interp True s
+                         interp t s
                          hintLoop
-           interp True s = do p <- Hint.interpret s (Hint.as :: ParamPattern)
-                              liftIO $ putMVar mOut $ HintOK p
-                              liftIO $ takeMVar mIn
-                              return ()
-           interp False _ = do liftIO $ putMVar mOut $ HintError "Didn't typecheck"
-                               liftIO $ takeMVar mIn
-                               return ()
+           interp (Left errors) _ = do liftIO $ putMVar mOut $ HintError $ "Didn't typecheck" ++ (concatMap show errors)
+                                       liftIO $ takeMVar mIn
+                                       return ()
+           interp (Right t) s | "Data.String.IsString" `isPrefixOf` t =
+             do liftIO $ hPutStrLn stderr $ "type: " ++ t
+                p <- Hint.interpret s (Hint.as :: Pattern String)
+                liftIO $ putMVar mOut $ HintOK (sound p)
+                liftIO $ takeMVar mIn
+                return ()
+                              | otherwise =
+             do liftIO $ hPutStrLn stderr $ "type: " ++ t
+                p <- Hint.interpret s (Hint.as :: ParamPattern)
+                liftIO $ putMVar mOut $ HintOK p
+                liftIO $ takeMVar mIn
+                return ()
 
