@@ -6,7 +6,7 @@ module Edit where
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-import           Control.Concurrent      (ThreadId, forkIO, killThread, threadDelay)
+import           Control.Concurrent      (ThreadId, forkIO, threadDelay, killThread)
 import           Control.Concurrent.MVar
 import           Control.Monad           (filterM, foldM, forever, unless, when)
 import           Control.Monad.IO.Class
@@ -71,7 +71,7 @@ data Playback = Playback {pbOffset  :: Double,
                           pbChanges :: [Change]
                          }
 
-dirt = Super
+dirt = Classic
 
 playbackSpeed = 2
 
@@ -703,7 +703,7 @@ mainLoop mvS = loop where
              PlaybackMode -> drawEditor mvS
             render
 
-            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
+            ev <- getEvent (sEditWindow s) Nothing -- (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
             updateScreen mvS (sMode s)
             unless done loop
