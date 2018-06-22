@@ -6,7 +6,7 @@ module Edit where
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-import           Control.Concurrent      (ThreadId, forkIO, killThread)
+import           Control.Concurrent      (ThreadId, forkIO, threadDelay, killThread)
 import           Control.Concurrent.MVar
 import           Control.Monad           (filterM, foldM, forever, unless, when)
 import           Control.Monad.IO.Class
@@ -71,7 +71,7 @@ data Playback = Playback {pbOffset  :: Double,
                           pbChanges :: [Change]
                          }
 
-dirt = Super
+dirt = Classic
 
 playbackSpeed = 2
 
@@ -397,8 +397,8 @@ initState args
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
-       (_, getNow) <- liftIO cpsUtils
-       cpsUtils <- liftIO cpsUtils'
+       cpsUtils@(_, _, getNow) <- liftIO cpsUtils'
+       liftIO $ threadDelay 500000
        let setters = case dirt of
                       Classic -> dirtSetters
                       Super   -> superDirtSetters
@@ -598,7 +598,7 @@ handleEv mvS EditMode ev =
                            -- the ESC will do this anyway, via
                            -- setKeypad..
                            return $ (now - (sLastAlt s)) < altTimeout
-             altTimeout = 0.02
+             altTimeout = 0.1
       Just (EventSpecialKey KeyUpArrow) -> move mvS (-1,0) >> ok
       Just (EventSpecialKey KeyDownArrow) -> move mvS (1,0) >> ok
       Just (EventSpecialKey KeyLeftArrow) -> move mvS (0,-1) >> ok
@@ -682,7 +682,7 @@ mainLoop mvS = loop where
              PlaybackMode -> drawEditor mvS
             render
 
-            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
+            ev <- getEvent (sEditWindow s) Nothing -- (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
             updateScreen mvS (sMode s)
             unless done loop
