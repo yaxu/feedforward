@@ -388,14 +388,17 @@ connectCircle mvS name =
                                        putMVar mvS s
                                        return ()
                                 | isPrefixOf "/replay " msg =
-                                    do let session_name = fromMaybe "noname" $ stripPrefix "/replay " msg
+                                    do let args = words $ fromJust $ stripPrefix "/replay " msg
+                                           session_name = head args
+                                           offset = (read (args !! 1)) :: Double
                                        liftIO $ do delAll mvS
                                                    s <- takeMVar mvS
                                                    let name = fromMaybe "anon" $ sName s
                                                    hPutStrLn stderr $ "replay "
-                                                   s' <- (startPlayback s $ joinPath ["sessions",
-                                                                                      session_name ++ "-" ++ name ++ ".json"
-                                                                                     ]
+                                                   s' <- (startPlayback s offset $
+                                                           joinPath ["sessions",
+                                                                     session_name ++ "-" ++ name ++ ".json"
+                                                                    ]
                                                          )
                                                    putMVar mvS s'
                                        return ()                                       
@@ -669,7 +672,7 @@ handleEv mvS FileMode (Just (EventSpecialKey k)) =
                                           liftIO $ delAll mvS
                                           s <- (liftIO $ takeMVar mvS)
                                           -- liftIO $ hPutStrLn stderr $ "select file: " ++ joinPath path
-                                          liftIO $ do s' <- (startPlayback s $ joinPath path)
+                                          liftIO $ do s' <- (startPlayback s 0 $ joinPath path)
                                                       putMVar mvS s'
                                           return ()
                                 ok
@@ -1028,18 +1031,18 @@ scSub = do udp <- udpServer "127.0.0.1" 0
 selectedPath fc = fcPath fc ++ [selected]
   where selected = (fcDirs fc ++ fcFiles fc) !! fcIndex fc
 
-startPlayback :: State -> FilePath -> IO State
-startPlayback s path =
+startPlayback :: State -> Double -> FilePath -> IO State
+startPlayback s offset path =
   do now <- (realToFrac <$> getPOSIXTime)
      hPutStrLn stderr $ show $ logDirectory </> path
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
          changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
-         offset | not (null changes) = now - (cWhen (head changes))
-                | otherwise = 0
+         offset' | not (null changes) = (now - (cWhen (head changes))) + offset
+                 | otherwise = offset
          playback = Playback {pbChanges = changes,
-                              pbOffset = offset
+                              pbOffset = offset'
                              }
      return $ s {sPlayback = Just playback,
                  sMode = PlaybackMode,
