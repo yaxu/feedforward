@@ -290,7 +290,8 @@ drawFooter s =
           let str = " " ++ name ++ show (sPos s)
           drawString $ str ++ replicate ((fromIntegral w) - (length str)) ' '
 
-rmsBlocks = " ▁▂▃▄▅▆▇█"
+-- rmsBlocks = " ▁▂▃▄▅▆▇█"
+rmsBlocks = " ░▒▓█"
 
 drawEditor :: MVar State -> Curses ()
 drawEditor mvS
@@ -349,8 +350,8 @@ drawEditor mvS
                                                drawString "  "
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
-                                              rmsL = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*2))
-                                              rmsR = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*2+1))
+                                              rmsL = min rmsMax $ floor $ 275 * ((sRMS s) !! (id*2))
+                                              rmsR = min rmsMax $ floor $ 275 * ((sRMS s) !! (id*2+1))
                                               str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
@@ -703,7 +704,7 @@ mainLoop mvS = loop where
              PlaybackMode -> drawEditor mvS
             render
 
-            ev <- getEvent (sEditWindow s) Nothing -- (Just (1000 `div` 20))
+            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
             updateScreen mvS (sMode s)
             unless done loop
