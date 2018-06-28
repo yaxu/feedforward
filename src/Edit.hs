@@ -73,8 +73,6 @@ data Playback = Playback {pbOffset  :: Double,
 
 dirt = Classic
 
-playbackSpeed = 2
-
 lTag :: Line -> Maybe Tag
 lTag l = bTag <$> lBlock l
 
@@ -209,9 +207,6 @@ applyChange s change@(MuteToggle {}) =
      return s'
        where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
              f l = l -- can't happen
-
-
-
 
 applyChange s _ =
   do hPutStrLn stderr $ "unhandled change type"
@@ -391,6 +386,18 @@ connectCircle mvS name =
                                                              }
                                        putMVar mvS s
                                        return ()
+                                | isPrefixOf "/replay " msg =
+                                    do let session_name = fromMaybe "noname" $ stripPrefix "/replay " msg
+                                       liftIO $ do delAll mvS
+                                                   s <- takeMVar mvS
+                                                   let name = fromMaybe "anon" $ sName s
+                                                   hPutStrLn stderr $ "replay "
+                                                   s' <- (startPlayback s $ joinPath ["sessions",
+                                                                                      session_name ++ "-" ++ name ++ ".json"
+                                                                                     ]
+                                                         )
+                                                   putMVar mvS s'
+                                       return ()                                       
                                 | isPrefixOf "/change " msg =
                                     do let change = A.decode $ encodeUtf8 $ T.pack $ fromJust $ stripPrefix "/change " msg
                                        if (isJust change)
@@ -658,7 +665,7 @@ handleEv mvS FileMode (Just (EventSpecialKey k)) =
                                               s' = s {sFileChoice = fc'}
                                           liftIO $ putMVar mvS s'
                                   else do -- clear screen
-                                          delAll mvS
+                                          liftIO $ delAll mvS
                                           s <- (liftIO $ takeMVar mvS)
                                           -- liftIO $ hPutStrLn stderr $ "select file: " ++ joinPath path
                                           liftIO $ do s' <- (startPlayback s $ joinPath path)
@@ -703,7 +710,7 @@ mainLoop mvS = loop where
              PlaybackMode -> drawEditor mvS
             render
 
-            ev <- getEvent (sEditWindow s) Nothing -- (Just (1000 `div` 20))
+            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
             updateScreen mvS (sMode s)
             unless done loop
@@ -896,18 +903,17 @@ del mvS =
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
 
-delAll :: MVar State -> Curses ()
+delAll :: MVar State -> IO ()
 delAll mvS =
-  do s <- (liftIO $ takeMVar mvS)
-     now <- (liftIO $ realToFrac <$> getPOSIXTime)
+  do s <- takeMVar mvS
+     now <- (realToFrac <$> getPOSIXTime)
      let ls = sCode s
          lastY = (length ls) - 1
          lastX = (lineLength ls lastY) - 1
          change | null ls = Nothing
                 | otherwise = Just $ (deleteChange (0,0) (lastY,lastX+1) (map lText ls)) {cWhen = now}
-     s' <- liftIO $ maybe (return s) (applyChange s) change
-     liftIO $ putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     s' <- maybe (return s) (applyChange s) change
+     putMVar mvS (s' {sRefresh = True})
 
 killLine :: MVar State -> Curses ()
 killLine mvS =
@@ -1024,6 +1030,7 @@ selectedPath fc = fcPath fc ++ [selected]
 startPlayback :: State -> FilePath -> IO State
 startPlayback s path =
   do now <- (realToFrac <$> getPOSIXTime)
+     hPutStrLn stderr $ show $ logDirectory </> path
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
@@ -1034,7 +1041,8 @@ startPlayback s path =
                               pbOffset = offset
                              }
      return $ s {sPlayback = Just playback,
-                 sMode = PlaybackMode
+                 sMode = PlaybackMode,
+                 sRefresh = True
                 }
 
 
