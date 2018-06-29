@@ -729,6 +729,10 @@ updateScreen mvS PlaybackMode
   = do s <- liftIO $ takeMVar mvS
        let (Playback offset cs) = fromJust $ sPlayback s
        now <- liftIO $ (realToFrac <$> getPOSIXTime)
+       -- let cs' = filterPre cs offset
+       --liftIO $ hPutStrLn stderr $ "offset: " ++ show (offset)
+       --liftIO $ hPutStrLn stderr $ "pre: " ++ show (length cs)
+       --liftIO $ hPutStrLn stderr $ "post: " ++ show (length cs')
        let (ready, waiting) = takeReady cs (now - offset)
        s' <- liftIO $ foldM applyChange s ready
        liftIO $ putMVar mvS (s' {sPlayback = Just $ Playback offset waiting})
@@ -1043,16 +1047,26 @@ startPlayback s offset path =
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
-         changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
-         offset' | not (null changes) = (now - (cWhen (head changes))) + offset
-                 | otherwise = offset
+         ffwdTo = (read (fromJust $ stripPrefix "// " (head ls))) :: Double
+         changes = filterPre ffwdTo $ mapMaybe (A.decode . encodeUtf8 . T.pack) ls
+         offset' = (now - ffwdTo) + offset
          playback = Playback {pbChanges = changes,
                               pbOffset = offset'
                              }
+     hPutStrLn stderr $ "offset: " ++ show offset
+     hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
+     hPutStrLn stderr $ "now: " ++ show ffwdTo
+     hPutStrLn stderr $ "offset': " ++ show offset'
      return $ s {sPlayback = Just playback,
                  sMode = PlaybackMode,
                  sRefresh = True
                 }
+       where
+         filterPre _ [] = []
+         filterPre t (c@(Change {}):cs) = c:(filterPre t cs)
+         filterPre t (c@(Move {}):cs) = c:(filterPre t cs)
+         filterPre t (c:cs) | (cWhen c) >= t = (c:(filterPre t cs))
+                            | otherwise = filterPre t cs 
 
 
 dumpCode :: Code -> String
