@@ -68,7 +68,8 @@ data Dirt = Classic | Super
           deriving Eq
 
 data Playback = Playback {pbOffset  :: Double,
-                          pbChanges :: [Change]
+                          pbChanges :: [Change],
+                          pbHushTime :: Double
                          }
 
 dirt = Classic
@@ -727,7 +728,7 @@ mainLoop mvS = loop where
 updateScreen :: MVar State -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
   = do s <- liftIO $ takeMVar mvS
-       let (Playback offset cs) = fromJust $ sPlayback s
+       let (Playback offset cs hushTime) = fromJust $ sPlayback s
        now <- liftIO $ (realToFrac <$> getPOSIXTime)
        -- let cs' = filterPre cs offset
        --liftIO $ hPutStrLn stderr $ "offset: " ++ show (offset)
@@ -735,7 +736,18 @@ updateScreen mvS PlaybackMode
        --liftIO $ hPutStrLn stderr $ "post: " ++ show (length cs')
        let (ready, waiting) = takeReady cs (now - offset)
        s' <- liftIO $ foldM applyChange s ready
-       liftIO $ putMVar mvS (s' {sPlayback = Just $ Playback offset waiting})
+       liftIO $ if now >= hushTime
+                then do hPutStrLn stderr ("hush! " ++ show hushTime)
+                        (sDirt s) silence
+                        putMVar mvS (s' {sPlayback = Nothing,
+                                         sCode = [],
+                                         sXWarp = 0,
+                                         sPos = (0,0),
+                                         sScroll = (0,0),
+                                         sMode = EditMode
+                                        }
+                                    )
+                else putMVar mvS (s' {sPlayback = Just $ Playback offset waiting hushTime})
        return ()
          where takeReady cs t = (takeWhile (\c -> (cWhen c) < t) cs,
                                  dropWhile (\c -> (cWhen c) < t) cs
@@ -990,7 +1002,7 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
                               response <- liftIO $ takeMVar (sHintOut s)
-                              liftIO $ hPutStrLn stderr $ "Response: " ++ show response
+                              -- liftIO $ hPutStrLn stderr $ "Response: " ++ show response
                               mungeOrbit <- mungeOrbitIO
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act (mungeOrbit id) response block
@@ -1047,26 +1059,35 @@ startPlayback s offset path =
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
-         ffwdTo = (read (fromJust $ stripPrefix "// " (head ls))) :: Double
-         changes = filterPre ffwdTo $ mapMaybe (A.decode . encodeUtf8 . T.pack) ls
+         ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
+         hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
+         changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
+         changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
          offset' = (now - ffwdTo) + offset
-         playback = Playback {pbChanges = changes,
-                              pbOffset = offset'
+         hushTime = now + hushDelta
+         playback = Playback {pbChanges = changes',
+                              pbOffset = offset',
+                              pbHushTime = hushTime
                              }
      hPutStrLn stderr $ "offset: " ++ show offset
      hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
+     hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
      hPutStrLn stderr $ "now: " ++ show ffwdTo
      hPutStrLn stderr $ "offset': " ++ show offset'
+     hPutStrLn stderr $ "changes: " ++ show (length changes)
+     hPutStrLn stderr $ "changes': " ++ show (length changes')
      return $ s {sPlayback = Just playback,
                  sMode = PlaybackMode,
                  sRefresh = True
                 }
        where
-         filterPre _ [] = []
-         filterPre t (c@(Change {}):cs) = c:(filterPre t cs)
-         filterPre t (c@(Move {}):cs) = c:(filterPre t cs)
-         filterPre t (c:cs) | (cWhen c) >= t = (c:(filterPre t cs))
-                            | otherwise = filterPre t cs 
+         filterPre :: Double -> Double -> [Change] -> [Change]
+         filterPre _ _ [] = []
+         filterPre start end (c@(Change {}):cs) = c:(filterPre start end cs)
+         filterPre start end (c@(Move {}):cs) = c:(filterPre start end cs)
+         filterPre start end (c:cs) | (cWhen c) > end = []
+                                    | (cWhen c) >= start = (c:(filterPre start end cs))
+                                    | otherwise = filterPre start end cs 
 
 
 dumpCode :: Code -> String
