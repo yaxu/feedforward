@@ -38,6 +38,9 @@ data Change = Change {cFrom    :: Pos,
             | MuteToggle {cWhen   :: Double,
                           cOrbit :: Int
                          }
+            | Hush {cWhen   :: Double,
+                    cOrbit :: Int
+                   }
             | Snapshot {cName :: Maybe String,
                         cWhen :: Double,
                         cText :: [String]

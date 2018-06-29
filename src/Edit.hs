@@ -208,6 +208,11 @@ applyChange s change@(MuteToggle {}) =
        where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
              f l = l -- can't happen
 
+applyChange s change@(Hush {}) =
+  do writeLog s change
+     (sDirt s) silence
+     return s
+
 applyChange s _ =
   do hPutStrLn stderr $ "unhandled change type"
      return s
