@@ -71,7 +71,7 @@ data Playback = Playback {pbOffset  :: Double,
                           pbChanges :: [Change]
                          }
 
-dirt = Classic
+dirt = Super
 
 playbackSpeed = 2
 
@@ -703,7 +703,7 @@ mainLoop mvS = loop where
              PlaybackMode -> drawEditor mvS
             render
 
-            ev <- getEvent (sEditWindow s) Nothing -- (Just (1000 `div` 20))
+            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
             done <- handleEv mvS (sMode s) ev
             updateScreen mvS (sMode s)
             unless done loop
