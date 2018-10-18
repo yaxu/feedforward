@@ -23,6 +23,7 @@ library
     , time
     , unix
     , websockets
+    , transformers
   exposed-modules:
       Change
       -- Client
@@ -54,6 +55,7 @@ executable feedforward
     , time
     , unix
     , websockets
+    , transformers 
   other-modules:
       Change
       -- Client
