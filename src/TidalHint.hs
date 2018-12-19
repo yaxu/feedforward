@@ -5,8 +5,10 @@ import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
 import           System.IO
 import           System.Posix.Signals
+import           Control.Concurrent.MVar
+import           Data.List (intercalate,isPrefixOf)
 
-data Response = HintOK {parsed :: ParamPattern}
+data Response = HintOK {parsed :: ControlPattern}
               | HintError {errorMessage :: String}
 
 instance Show Response where
@@ -16,7 +18,7 @@ instance Show Response where
 {-
 runJob :: String -> IO (Response)
 runJob job = do putStrLn $ "Parsing: " ++ job
-                result <- hintParamPattern job
+                result <- hintControlPattern job
                 let response = case result of
                       Left err -> Error (show err)
                       Right p -> OK p
@@ -28,11 +30,11 @@ libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum",
        ]
 
 {-
-hintParamPattern  :: String -> IO (Either InterpreterError ParamPattern)
-hintParamPattern s = Hint.runInterpreter $ do
+hintControlPattern  :: String -> IO (Either InterpreterError ControlPattern)
+hintControlPattern s = Hint.runInterpreter $ do
   Hint.set [languageExtensions := [OverloadedStrings]]
   Hint.setImports libs
-  Hint.interpret s (Hint.as :: ParamPattern)
+  Hint.interpret s (Hint.as :: ControlPattern)
 -}
 
 hintJob  :: (MVar String, MVar Response) -> IO ()
@@ -79,7 +81,7 @@ hintJob (mIn, mOut) =
                 return ()
                               | otherwise =
              do liftIO $ hPutStrLn stderr $ "type: " ++ t
-                p <- Hint.interpret s (Hint.as :: ParamPattern)
+                p <- Hint.interpret s (Hint.as :: ControlPattern)
                 liftIO $ putMVar mOut $ HintOK p
                 liftIO $ takeMVar mIn
                 return ()
