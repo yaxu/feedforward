@@ -68,12 +68,11 @@ data Dirt = Classic | Super
           deriving Eq
 
 data Playback = Playback {pbOffset  :: Double,
-                          pbChanges :: [Change]
+                          pbChanges :: [Change],
+                          pbHushTime :: Double
                          }
 
 dirt = Super
-
-playbackSpeed = 2
 
 lTag :: Line -> Maybe Tag
 lTag l = bTag <$> lBlock l
@@ -210,8 +209,10 @@ applyChange s change@(MuteToggle {}) =
        where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
              f l = l -- can't happen
 
-
-
+applyChange s change@(Hush {}) =
+  do writeLog s change
+     (sDirt s) silence
+     return s
 
 applyChange s _ =
   do hPutStrLn stderr $ "unhandled change type"
@@ -290,7 +291,8 @@ drawFooter s =
           let str = " " ++ name ++ show (sPos s)
           drawString $ str ++ replicate ((fromIntegral w) - (length str)) ' '
 
-rmsBlocks = " ▁▂▃▄▅▆▇█"
+-- rmsBlocks = " ▁▂▃▄▅▆▇█"
+rmsBlocks = " ░▒▓█"
 
 drawEditor :: MVar State -> Curses ()
 drawEditor mvS
@@ -349,8 +351,8 @@ drawEditor mvS
                                                drawString "  "
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
-                                              rmsL = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*2))
-                                              rmsR = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*2+1))
+                                              rmsL = min rmsMax $ floor $ 275 * ((sRMS s) !! (id*2))
+                                              rmsR = min rmsMax $ floor $ 275 * ((sRMS s) !! (id*2+1))
                                               str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
@@ -391,6 +393,21 @@ connectCircle mvS name =
                                                              }
                                        putMVar mvS s
                                        return ()
+                                | isPrefixOf "/replay " msg =
+                                    do let args = words $ fromJust $ stripPrefix "/replay " msg
+                                           session_name = head args
+                                           offset = (read (args !! 1)) :: Double
+                                       liftIO $ do delAll mvS
+                                                   s <- takeMVar mvS
+                                                   let name = fromMaybe "anon" $ sName s
+                                                   hPutStrLn stderr $ "replay "
+                                                   s' <- (startPlayback s offset $
+                                                           joinPath ["sessions",
+                                                                     session_name ++ "-" ++ name ++ ".json"
+                                                                    ]
+                                                         )
+                                                   putMVar mvS s'
+                                       return ()                                       
                                 | isPrefixOf "/change " msg =
                                     do let change = A.decode $ encodeUtf8 $ T.pack $ fromJust $ stripPrefix "/change " msg
                                        if (isJust change)
@@ -658,10 +675,10 @@ handleEv mvS FileMode (Just (EventSpecialKey k)) =
                                               s' = s {sFileChoice = fc'}
                                           liftIO $ putMVar mvS s'
                                   else do -- clear screen
-                                          delAll mvS
+                                          liftIO $ delAll mvS
                                           s <- (liftIO $ takeMVar mvS)
                                           -- liftIO $ hPutStrLn stderr $ "select file: " ++ joinPath path
-                                          liftIO $ do s' <- (startPlayback s $ joinPath path)
+                                          liftIO $ do s' <- (startPlayback s 0 $ joinPath path)
                                                       putMVar mvS s'
                                           return ()
                                 ok
@@ -711,11 +728,26 @@ mainLoop mvS = loop where
 updateScreen :: MVar State -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
   = do s <- liftIO $ takeMVar mvS
-       let (Playback offset cs) = fromJust $ sPlayback s
+       let (Playback offset cs hushTime) = fromJust $ sPlayback s
        now <- liftIO $ (realToFrac <$> getPOSIXTime)
+       -- let cs' = filterPre cs offset
+       --liftIO $ hPutStrLn stderr $ "offset: " ++ show (offset)
+       --liftIO $ hPutStrLn stderr $ "pre: " ++ show (length cs)
+       --liftIO $ hPutStrLn stderr $ "post: " ++ show (length cs')
        let (ready, waiting) = takeReady cs (now - offset)
        s' <- liftIO $ foldM applyChange s ready
-       liftIO $ putMVar mvS (s' {sPlayback = Just $ Playback offset waiting})
+       liftIO $ if now >= hushTime
+                then do hPutStrLn stderr ("hush! " ++ show hushTime)
+                        (sDirt s) silence
+                        putMVar mvS (s' {sPlayback = Nothing,
+                                         sCode = [],
+                                         sXWarp = 0,
+                                         sPos = (0,0),
+                                         sScroll = (0,0),
+                                         sMode = EditMode
+                                        }
+                                    )
+                else putMVar mvS (s' {sPlayback = Just $ Playback offset waiting hushTime})
        return ()
          where takeReady cs t = (takeWhile (\c -> (cWhen c) < t) cs,
                                  dropWhile (\c -> (cWhen c) < t) cs
@@ -896,18 +928,17 @@ del mvS =
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
 
-delAll :: MVar State -> Curses ()
+delAll :: MVar State -> IO ()
 delAll mvS =
-  do s <- (liftIO $ takeMVar mvS)
-     now <- (liftIO $ realToFrac <$> getPOSIXTime)
+  do s <- takeMVar mvS
+     now <- (realToFrac <$> getPOSIXTime)
      let ls = sCode s
          lastY = (length ls) - 1
          lastX = (lineLength ls lastY) - 1
          change | null ls = Nothing
                 | otherwise = Just $ (deleteChange (0,0) (lastY,lastX+1) (map lText ls)) {cWhen = now}
-     s' <- liftIO $ maybe (return s) (applyChange s) change
-     liftIO $ putMVar mvS s'
-     updateWindow (sEditWindow s) clear
+     s' <- maybe (return s) (applyChange s) change
+     putMVar mvS (s' {sRefresh = True})
 
 killLine :: MVar State -> Curses ()
 killLine mvS =
@@ -971,7 +1002,7 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
                               response <- liftIO $ takeMVar (sHintOut s)
-                              liftIO $ hPutStrLn stderr $ "Response: " ++ show response
+                              -- liftIO $ hPutStrLn stderr $ "Response: " ++ show response
                               mungeOrbit <- mungeOrbitIO
                               let block = fromJust $ lBlock $ (sCode s) !! n
                                   (block', ps') = act (mungeOrbit id) response block
@@ -1021,21 +1052,42 @@ scSub = do udp <- udpServer "127.0.0.1" 0
 selectedPath fc = fcPath fc ++ [selected]
   where selected = (fcDirs fc ++ fcFiles fc) !! fcIndex fc
 
-startPlayback :: State -> FilePath -> IO State
-startPlayback s path =
+startPlayback :: State -> Double -> FilePath -> IO State
+startPlayback s offset path =
   do now <- (realToFrac <$> getPOSIXTime)
+     hPutStrLn stderr $ show $ logDirectory </> path
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
+         ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
+         hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
          changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
-         offset | not (null changes) = now - (cWhen (head changes))
-                | otherwise = 0
-         playback = Playback {pbChanges = changes,
-                              pbOffset = offset
+         changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
+         offset' = (now - ffwdTo) + offset
+         hushTime = now + hushDelta
+         playback = Playback {pbChanges = changes',
+                              pbOffset = offset',
+                              pbHushTime = hushTime
                              }
+     hPutStrLn stderr $ "offset: " ++ show offset
+     hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
+     hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
+     hPutStrLn stderr $ "now: " ++ show ffwdTo
+     hPutStrLn stderr $ "offset': " ++ show offset'
+     hPutStrLn stderr $ "changes: " ++ show (length changes)
+     hPutStrLn stderr $ "changes': " ++ show (length changes')
      return $ s {sPlayback = Just playback,
-                 sMode = PlaybackMode
+                 sMode = PlaybackMode,
+                 sRefresh = True
                 }
+       where
+         filterPre :: Double -> Double -> [Change] -> [Change]
+         filterPre _ _ [] = []
+         filterPre start end (c@(Change {}):cs) = c:(filterPre start end cs)
+         filterPre start end (c@(Move {}):cs) = c:(filterPre start end cs)
+         filterPre start end (c:cs) | (cWhen c) > end = []
+                                    | (cWhen c) >= start = (c:(filterPre start end cs))
+                                    | otherwise = filterPre start end cs 
 
 
 dumpCode :: Code -> String
