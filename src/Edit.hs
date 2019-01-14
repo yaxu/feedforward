@@ -25,9 +25,7 @@ import           Data.Time.Format
 import qualified Network.Socket          as N
 import qualified Network.WebSockets      as WS
 import           Sound.OSC.FD
-import           Sound.Tidal.Context     (ParamPattern, cpsUtils, cpsUtils',
-                                          dirtSetters, orbit, silence, stack,
-                                          superDirtSetters, ( # ))
+import           Sound.Tidal.Context    hiding (when)
 import           System.Directory
 import           System.Environment      (getArgs, lookupEnv)
 import           System.FilePath
@@ -51,7 +49,7 @@ data Status = Success | Error | Normal
 data Block = Block {bTag      :: Tag,
                     bModified :: Bool,
                     bStatus   :: Status,
-                    bPattern  :: Maybe ParamPattern,
+                    bPattern  :: Maybe ControlPattern,
                     bMute     :: Bool,
                     bSolo     :: Bool
                    }
@@ -112,7 +110,7 @@ data FileChoice = FileChoice {fcPath  :: [FilePath],
                               fcFiles :: [FilePath]
                              }
 
-data State = State {sCode         :: Code,
+data EState = EState {sCode         :: Code,
                     sPos          :: Pos,
                     sXWarp        :: Int,
                     sEditWindow   :: Window,
@@ -123,12 +121,11 @@ data State = State {sCode         :: Code,
                     sColourShaded :: ColorID,
                     sHintIn       :: MVar String,
                     sHintOut      :: MVar Response,
-                    sDirt         :: ParamPattern -> IO (),
+                    sTidal        :: Stream,
                     sChangeSet    :: ChangeSet,
                     sLogFH        :: Handle,
                     sRMS          :: [Float],
                     sScroll       :: (Int,Int),
-                    sCpsUtils     :: CpsUtils,
                     sMode         :: Mode,
                     sFileChoice   :: FileChoice,
                     sCircle       :: Maybe (Change -> IO ()),
@@ -145,6 +142,9 @@ rightMargin  = 0 :: Integer
 
 hasChar :: Line -> Bool
 hasChar = any (/= ' ') . lText
+
+sendTidal :: EState -> ControlPattern -> IO ()
+sendTidal s pat = streamReplace (sTidal s) "ffwd" pat
 
 updateTags :: Code -> Code
 updateTags ls = assignTags freeTags ls'
@@ -167,7 +167,7 @@ updateTags ls = assignTags freeTags ls'
         taggable prevEmpty (l:ls) = (prevEmpty && (not empty), l):(taggable empty ls)
           where empty = not $ hasChar l
 
-applyChange :: State -> Change -> IO (State)
+applyChange :: EState -> Change -> IO (EState)
 applyChange s (change@(Change {})) = do writeLog s' change
                                         return s'
   where ls | (cOrigin change) == "+input" = updateTags $ applyInput s change
@@ -185,7 +185,7 @@ applyChange s change@(Eval {}) =
      hPutStrLn stderr $ "unmuted blocks: " ++ show (length blocks) ++ " of " ++ show (length blocks')
      hPutStrLn stderr $ show blocks'
      (s',ps) <- foldM evalBlock (s, []) blocks
-     (sDirt s) (stack ps)
+     (sendTidal s) (stack ps)
      writeLog s' change
      return s'
 
@@ -210,9 +210,6 @@ applyChange s change@(MuteToggle {}) =
        where f (l@(Line {lBlock = Just b})) = l {lBlock = Just $ b {bMute = not (bMute b)}}
              f l = l -- can't happen
 
-
-
-
 applyChange s _ =
   do hPutStrLn stderr $ "unhandled change type"
      return s
@@ -220,7 +217,7 @@ applyChange s _ =
 withLineText :: Line -> (String -> String)  -> Line
 withLineText (Line tag text) f = Line tag (f text )
 
-applyInput :: State -> Change -> Code
+applyInput :: EState -> Change -> Code
 applyInput s change = preL ++ addedWithBlock ++ postL
   where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext' s (cFrom change)
         added :: Code
@@ -231,7 +228,7 @@ applyInput s change = preL ++ addedWithBlock ++ postL
         addToLast :: String -> Code -> Code
         addToLast x xs = init xs ++ [withLineText (last xs) (++ x)]
 
-applyDelete :: State -> Change -> Code
+applyDelete :: EState -> Change -> Code
 applyDelete s change = preL ++ ((Line (lBlock l) $ preX ++ postX):postL)
   where (_, _, preL, l, _, preX, _) = cursorContext' s (cFrom change)
         (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
@@ -278,7 +275,7 @@ doScroll s (h,w) = s {sScroll = (sy',sx')}
             | x >= sx + (fromIntegral w') = (x - (fromIntegral w')) + 1
             | otherwise = sx
 
-drawFooter :: State -> Curses ()
+drawFooter :: EState -> Curses ()
 drawFooter s =
   do mc <- maxColor
      let name = fromMaybe "" ((\x -> "[" ++ x ++ "] ") <$> sName s)
@@ -292,7 +289,7 @@ drawFooter s =
 
 rmsBlocks = " ▁▂▃▄▅▆▇█"
 
-drawEditor :: MVar State -> Curses ()
+drawEditor :: MVar EState -> Curses ()
 drawEditor mvS
   = do s <- (liftIO $ takeMVar mvS)
        s'' <- updateWindow (sEditWindow s) $ do
@@ -311,7 +308,7 @@ drawEditor mvS
        drawFooter s''
        updateWindow (sEditWindow s) $ goCursor s''
        liftIO $ putMVar mvS (s'' {sRefresh = False})
-  where drawLine :: State -> Integer -> (Integer, (Line, Integer)) -> Update ()
+  where drawLine :: EState -> Integer -> (Integer, (Line, Integer)) -> Update ()
         drawLine s w (y, (l, n)) =
           do let scrollX = snd $ sScroll s
                  skipLeft = drop scrollX $ lText l
@@ -357,7 +354,7 @@ drawEditor mvS
                                           drawString $ str
                         | otherwise = return ()
 
-connectCircle :: MVar State -> Maybe String -> IO (Maybe (Change -> IO ()))
+connectCircle :: MVar EState -> Maybe String -> IO (Maybe (Change -> IO ()))
 connectCircle mvS name =
   do addr <- fromMaybe "127.0.0.1" <$> lookupEnv "CIRCLE_ADDR"
      port <- fromMaybe "6010" <$> lookupEnv "CIRCLE_PORT"
@@ -401,8 +398,25 @@ connectCircle mvS name =
                                        return ()
                                 | otherwise = return ()
 
-initState :: [String] -> Curses (MVar State)
-initState args
+
+catfoodTarget :: OSCTarget
+catfoodTarget = OSCTarget {oName = "hellocatfood",
+                           oAddress = "10.0.0.111",
+                           oPort = 7000,
+                           oPath = "/hellocatfood",
+                           oShape = Just [("s", Nothing),
+                                          ("n", Just $ VF 0),
+                                          ("speed", Just $ VF 1),
+                                          ("pan", Just $ VF 0.5)
+                                         ],
+                           oLatency = 0.01,
+                           oPreamble = [],
+                           oTimestamp = NoStamp
+                          }
+
+
+initEState :: [String] -> Curses (MVar EState)
+initEState args
   = do w <- defaultWindow
        updateWindow w clear
        setEcho False
@@ -415,17 +429,12 @@ initState args
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
-       cu@(_,_,getNow) <- liftIO cpsUtils'
-       liftIO $ threadDelay 250000
-       let setters = case dirt of
-                      Classic -> dirtSetters
-                      Super   -> superDirtSetters
-       (d, _) <- liftIO (setters getNow)
+       tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        mvS <- liftIO $ newEmptyMVar
        circle <- liftIO $ connectCircle mvS name
-       liftIO $ putMVar mvS $ State {sCode = [Line Nothing ""],
+       liftIO $ putMVar mvS $ EState {sCode = [Line Nothing ""],
                                      sPos = (0,0),
                                      sEditWindow = w,
                                      sFileWindow = fileWindow,
@@ -437,12 +446,11 @@ initState args
                                      -- sHilite = (False, []),
                                      sHintIn = mIn,
                                      sHintOut = mOut,
-                                     sDirt = d,
+                                     sTidal = tidal,
                                      sChangeSet = [],
                                      sLogFH = logFH,
                                      sRMS = replicate 20 0,
                                      sScroll = (0,0),
-                                     sCpsUtils = cu,
                                      sMode = EditMode,
                                      sFileChoice = FileChoice {fcPath = [],
                                                                fcIndex = 0,
@@ -457,18 +465,18 @@ initState args
                                     }
        return mvS
 
-moveHome :: MVar State -> Curses ()
+moveHome :: MVar EState -> Curses ()
 moveHome mvS = do s <- liftIO (readMVar mvS)
                   let (_, x) = sPos s
                   move mvS (0, negate x)
 
-moveEnd :: MVar State -> Curses ()
+moveEnd :: MVar EState -> Curses ()
 moveEnd mvS = do s <- liftIO (readMVar mvS)
                  let (y, x) = sPos s
                      xTo = length (lText $ sCode s !! y)
                  move mvS (0, xTo-x)
 
-move :: MVar State -> (Int, Int) -> Curses ()
+move :: MVar EState -> (Int, Int) -> Curses ()
 move mvS (yd,xd) = do s <- liftIO (readMVar mvS)
                       let maxY = length (sCode s) - 1
                           (y,x) = sPos s
@@ -481,7 +489,7 @@ move mvS (yd,xd) = do s <- liftIO (readMVar mvS)
                           x'' = min xw maxX
                       moveTo mvS (y',x'')
 
-moveTo :: MVar State -> (Int, Int) -> Curses ()
+moveTo :: MVar EState -> (Int, Int) -> Curses ()
 moveTo mvS (y,x) = do s <- liftIO (takeMVar mvS)
                       let maxY = (length $ sCode s) - 1
                           y' = min maxY y
@@ -527,14 +535,14 @@ pathContents path = do let fullPath = joinPath (logDirectory:path)
                        return (dirs,files)
 
 
-writeLog :: State -> Change -> IO ()
+writeLog :: EState -> Change -> IO ()
 writeLog s c = do hPutStrLn (sLogFH s) (T.unpack $ decodeUtf8 $ A.encode $ c)
                   hFlush (sLogFH s)
                   sendCircle (sCircle s)
                     where sendCircle Nothing  = return ()
                           sendCircle (Just f) = f c
 
-listenRMS :: MVar State -> IO ()
+listenRMS :: MVar EState -> IO ()
 listenRMS mvS = do let port = case dirt of
                                Super   -> 0
                                Classic -> 6010
@@ -563,7 +571,7 @@ listenRMS mvS = do let port = case dirt of
     subscribe udp | dirt == Super =
                       do remote_addr <- N.inet_addr "127.0.0.1"
                          let remote_sockaddr = N.SockAddrInet 57110 remote_addr
-                         sendTo udp (Message "/notify" [int32 1]) remote_sockaddr
+                         sendTo udp (p_message "/notify" [int32 1]) remote_sockaddr
                   | otherwise = return ()
 
 main :: IO ()
@@ -576,13 +584,13 @@ main = do installHandler sigINT Ignore Nothing
           installHandler sigTSTP Ignore Nothing
           argv <- getArgs
           runCurses $ do
-            mvS <- initState argv
+            mvS <- initEState argv
             liftIO $ forkIO $ listenRMS mvS
             drawEditor mvS
             render
             mainLoop mvS
 
-handleEv :: MVar State -> Mode -> Maybe Event -> Curses Bool
+handleEv :: MVar EState -> Mode -> Maybe UI.NCurses.Event -> Curses Bool
 handleEv mvS PlaybackMode ev =
   do let -- quit = return True
          ok = return False
@@ -708,7 +716,7 @@ mainLoop mvS = loop where
             updateScreen mvS (sMode s)
             unless done loop
 
-updateScreen :: MVar State -> Mode -> Curses ()
+updateScreen :: MVar EState -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
   = do s <- liftIO $ takeMVar mvS
        let (Playback offset cs) = fromJust $ sPlayback s
@@ -803,10 +811,10 @@ keypress mvS isAlt c | isAlt = keyAlt mvS c
   where isCtrl = ord(c) >= 1 && ord(c) <= 26
 
 
-cursorContext :: State -> (Code, Pos, Code, Line, Code, String, String)
+cursorContext :: EState -> (Code, Pos, Code, Line, Code, String, String)
 cursorContext s = cursorContext' s (sPos s)
 
-cursorContext' :: State -> Pos -> (Code, Pos, Code, Line, Code, String, String)
+cursorContext' :: EState -> Pos -> (Code, Pos, Code, Line, Code, String, String)
 cursorContext' s (y,x) =
   (ls, (y,x), preL, l, postL, preX, postX)
   where  ls = sCode s
@@ -817,7 +825,7 @@ cursorContext' s (y,x) =
          postX = drop x $ lText l
 
 
-eval :: MVar State -> Curses ()
+eval :: MVar EState -> Curses ()
 eval mvS =
   do liftIO $ do s <- (takeMVar mvS)
                  now <- (realToFrac <$> getPOSIXTime)
@@ -826,13 +834,13 @@ eval mvS =
                  putMVar mvS s'
      return ()
 
-stopAll :: MVar State -> Curses ()
+stopAll :: MVar EState -> Curses ()
 stopAll mvS =
   do liftIO $ do s <- (readMVar mvS)
-                 (sDirt s) silence
+                 (sendTidal s) silence
      return ()
 
-insertBreak :: MVar State -> Curses ()
+insertBreak :: MVar EState -> Curses ()
 insertBreak mvS =
   do s <- liftIO $ takeMVar mvS
      liftIO $ do let (y,x) = sPos s
@@ -842,7 +850,7 @@ insertBreak mvS =
                  s' <- applyChange (s {sXWarp = 0}) change
                  putMVar mvS s'
 
-insertChar :: MVar State -> Char -> Curses ()
+insertChar :: MVar EState -> Char -> Curses ()
 insertChar mvS c =
   do s <- liftIO $ takeMVar mvS
      liftIO $ do let (y,x) = sPos s
@@ -852,7 +860,7 @@ insertChar mvS c =
                  s' <- applyChange (s {sXWarp = x'}) change
                  putMVar mvS s'
 
-backspaceChar :: State -> State
+backspaceChar :: EState -> EState
 backspaceChar s =
   s {sCode = ls',
      sPos = (y',x'),
@@ -870,7 +878,7 @@ charAt ls (y,x) = (lText $ ls !! y) !! x
 lineLength :: Code -> Int -> Int
 lineLength ls y = length $ lText $ ls !! y
 
-backspace :: MVar State -> Curses ()
+backspace :: MVar EState -> Curses ()
 backspace mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
@@ -885,7 +893,7 @@ backspace mvS =
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
 
-del :: MVar State -> Curses ()
+del :: MVar EState -> Curses ()
 del mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
@@ -896,7 +904,7 @@ del mvS =
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
 
-delAll :: MVar State -> Curses ()
+delAll :: MVar EState -> Curses ()
 delAll mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
@@ -909,7 +917,7 @@ delAll mvS =
      liftIO $ putMVar mvS s'
      updateWindow (sEditWindow s) clear
 
-killLine :: MVar State -> Curses ()
+killLine :: MVar EState -> Curses ()
 killLine mvS =
   do s <- (liftIO $ takeMVar mvS)
      now <- (liftIO $ realToFrac <$> getPOSIXTime)
@@ -927,7 +935,7 @@ fileTime fp = h ++ (':':m) ++ (':':s)
         m = take 2 $ drop 2 t
         s = take 2 $ drop 4 t
 
-fileMode :: MVar State -> Curses ()
+fileMode :: MVar EState -> Curses ()
 fileMode mvS = do s <- liftIO $ takeMVar mvS
                   defaultPath <- liftIO defaultLogPath
                   (dirs,files) <- (liftIO $ pathContents defaultPath)
@@ -944,7 +952,7 @@ fileMode mvS = do s <- liftIO $ takeMVar mvS
 
 -- readDir fc
 
-drawDirs:: MVar State -> Curses ()
+drawDirs:: MVar EState -> Curses ()
 drawDirs mvS
   = do s <- (liftIO $ takeMVar mvS)
        let fileWindow = sFileWindow s
@@ -966,26 +974,37 @@ drawDirs mvS
                                drawString dir
                                setAttribute AttributeReverse False
 
-evalBlock :: (State, [ParamPattern]) -> (Int, Code) -> IO (State, [ParamPattern])
+evalBlock :: (EState, [ControlPattern]) -> (Int, Code) -> IO (EState, [ControlPattern])
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code
                               response <- liftIO $ takeMVar (sHintOut s)
                               liftIO $ hPutStrLn stderr $ "Response: " ++ show response
                               mungeOrbit <- mungeOrbitIO
+                              liftIO $ hPutStrLn stderr $ "Id: " ++ show id
                               let block = fromJust $ lBlock $ (sCode s) !! n
-                                  (block', ps') = act (mungeOrbit id) response block
+                                  (block', ps') = act id (mungeOrbit id) response block
                                   s' = setBlock n block'
                               -- hPutStrLn stderr $ show $ block
                               -- hPutStrLn stderr $ ">>>>"
                               -- hPutStrLn stderr $ show $ block'
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
-  where act id (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
-          where p' = p # orbit (pure id)
-        act _ (HintError err) b = (b {bStatus = Error}, ps')
+  where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
+          where p' = filt id $ p # orbit (pure o)
+        act _ _ (HintError err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps
+
+        filt i = (|+ hpf ((rangex 1 20000 $ cF 0 ctrl)-1) )
+          where ctrl = show $ 40 + i
+{-
+filt id = (|* (lpf (rangex 100 10000 $ min 1 <$> 2 * cF 0 ctrl)
+                       |* hpf (range 0 4000 $ max 0 <$> ((2 * cF 0 ctrl) - 1))
+                      )
+                  )
+          where ctrl = show $ 40 + id
+-}
         setBlock n block = s {sCode = ls'}
           where ls = sCode s
                 l = (ls !! n) {lBlock = Just block}
@@ -1012,7 +1031,7 @@ unmutedBlocks ls = filter (not . lMuted . (!!0) . snd) $ allBlocks 0 ls
 scSub = do udp <- udpServer "127.0.0.1" 0
            remote_addr <- N.inet_addr "127.0.0.1"
            let remote_sockaddr = N.SockAddrInet 57110 remote_addr
-           sendTo udp (Message "/notify" []) remote_sockaddr
+           sendTo udp (p_message "/notify" []) remote_sockaddr
            loop udp
   where loop udp = do m <- recvMessage udp
                       hPutStrLn stderr $ show m
@@ -1021,7 +1040,7 @@ scSub = do udp <- udpServer "127.0.0.1" 0
 selectedPath fc = fcPath fc ++ [selected]
   where selected = (fcDirs fc ++ fcFiles fc) !! fcIndex fc
 
-startPlayback :: State -> FilePath -> IO State
+startPlayback :: EState -> FilePath -> IO EState
 startPlayback s path =
   do now <- (realToFrac <$> getPOSIXTime)
      fh <- openFile (logDirectory </> path) ReadMode
