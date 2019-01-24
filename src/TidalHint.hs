@@ -70,16 +70,11 @@ hintJob (mIn, mOut) =
                          --interp check s
                          interp t s
                          hintLoop
-           interp (Left errors) _ = do liftIO $ putMVar mOut $ HintError $ "Didn't typecheck" ++ (concatMap show errors)
-                                       liftIO $ takeMVar mIn
+           interp (Left errors) _ = do liftIO $ do putMVar mOut $ HintError $ "Didn't typecheck" ++ (concatMap show errors)
+                                                   hPutStrLn stderr $ "error: " ++ (concatMap show errors)
+                                                   takeMVar mIn
                                        return ()
-           interp (Right t) s | "Data.String.IsString" `isPrefixOf` t =
-             do liftIO $ hPutStrLn stderr $ "type: " ++ t
-                p <- Hint.interpret s (Hint.as :: Pattern String)
-                liftIO $ putMVar mOut $ HintOK (sound p)
-                liftIO $ takeMVar mIn
-                return ()
-                              | otherwise =
+           interp (Right t) s =
              do liftIO $ hPutStrLn stderr $ "type: " ++ t
                 p <- Hint.interpret s (Hint.as :: ControlPattern)
                 liftIO $ putMVar mOut $ HintOK p

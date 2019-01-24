@@ -8,7 +8,7 @@ module Edit where
 
 import           Control.Concurrent      (ThreadId, forkIO, threadDelay, killThread)
 import           Control.Concurrent.MVar
-import           Control.Monad           (filterM, foldM, forever, unless, when)
+import           Control.Monad           (filterM, foldM, forever, unless, when, join)
 import           Control.Monad.IO.Class
 import           Data.Char
 import           Data.List               (elemIndex, inits, intercalate,
@@ -34,6 +34,7 @@ import           System.Posix.Process
 import           System.Posix.Signals
 import           Text.Printf
 import           UI.NCurses
+import           Text.Read (readMaybe)
 
 import qualified Data.Aeson              as A
 import           GHC.Generics
@@ -130,6 +131,7 @@ data EState = EState {sCode         :: Code,
                     sCircle       :: Maybe (Change -> IO ()),
                     sPlayback     :: Maybe Playback,
                     sName         :: Maybe String,
+                    sNumber       :: Maybe Int,
                     sRefresh      :: Bool,
                     sLastAlt      :: Double
                    }
@@ -143,7 +145,10 @@ hasChar :: Line -> Bool
 hasChar = any (/= ' ') . lText
 
 sendTidal :: EState -> ControlPattern -> IO ()
-sendTidal s pat = streamReplace (sTidal s) "ffwd" pat
+sendTidal s pat = do let pat' = if isJust (sNumber s)
+                                then pat |+ n (pure $ fromIntegral $ fromJust (sNumber s))
+                                else pat
+                     streamReplace (sTidal s) "ffwd" pat'
 
 updateTags :: Code -> Code
 updateTags ls = assignTags freeTags ls'
@@ -211,7 +216,7 @@ applyChange s change@(MuteToggle {}) =
 
 applyChange s change@(Hush {}) =
   do writeLog s change
-     (sDirt s) silence
+     (sendTidal s) silence
      return s
 
 applyChange s _ =
@@ -397,7 +402,8 @@ connectCircle mvS name =
                                     do let args = words $ fromJust $ stripPrefix "/replay " msg
                                            session_name = head args
                                            offset = (read (args !! 1)) :: Double
-                                       liftIO $ do delAll mvS
+                                       liftIO $ do hPutStrLn stderr $ "args: " ++ show args
+                                                   delAll mvS
                                                    s <- takeMVar mvS
                                                    let name = fromMaybe "anon" $ sName s
                                                    hPutStrLn stderr $ "replay "
@@ -449,9 +455,11 @@ initEState args
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
-       tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
+       -- tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
+       tidal <- liftIO $ startMulti [superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
+       number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
        mvS <- liftIO $ newEmptyMVar
        circle <- liftIO $ connectCircle mvS name
        liftIO $ putMVar mvS $ EState {sCode = [Line Nothing ""],
@@ -480,6 +488,7 @@ initEState args
                                      sCircle = circle,
                                      sPlayback = Nothing,
                                      sName = name,
+                                     sNumber = join $ fmap readMaybe number,
                                      sRefresh = False,
                                      sLastAlt = 0
                                     }
@@ -749,7 +758,7 @@ updateScreen mvS PlaybackMode
        s' <- liftIO $ foldM applyChange s ready
        liftIO $ if now >= hushTime
                 then do hPutStrLn stderr ("hush! " ++ show hushTime)
-                        (sDirt s) silence
+                        (sendTidal s) silence
                         putMVar mvS (s' {sPlayback = Nothing,
                                          sCode = [],
                                          sXWarp = 0,
@@ -939,7 +948,7 @@ del mvS =
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
 
-delAll :: MVar EState -> Curses ()
+delAll :: MVar EState -> IO ()
 delAll mvS =
   do s <- takeMVar mvS
      now <- (realToFrac <$> getPOSIXTime)
