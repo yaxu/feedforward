@@ -598,10 +598,16 @@ listenRMS mvS = do let port = case dirt of
          putMVar mvS $ s {sRMS = rms'}
     act _ = return ()
     subscribe udp | dirt == Super =
-                      do remote_addr <- N.inet_addr "127.0.0.1"
-                         let remote_sockaddr = N.SockAddrInet 57110 remote_addr
-                         sendTo udp (p_message "/notify" [int32 1]) remote_sockaddr
+                      do -- remote_addr <- N.inet_addr "127.0.0.1"
+                         remote_addr <- resolve "127.0.0.1" "57110"
+                         remote_sockaddr <- N.socket (N.addrFamily remote_addr) (N.addrSocketType remote_addr) (N.addrProtocol remote_addr)
+                         -- let remote_sockaddr = N.SockAddrInet 57110 remote_addr
+                         sendTo udp (p_message "/notify" [int32 1]) (N.addrAddress remote_addr)
                   | otherwise = return ()
+
+resolve host port = do let hints = N.defaultHints { N.addrSocketType = N.Stream }
+                       addr:_ <- N.getAddrInfo (Just hints) (Just host) (Just port)
+                       return addr
 
 main :: IO ()
 main = do installHandler sigINT Ignore Nothing
@@ -1072,9 +1078,11 @@ unmutedBlocks :: Code -> [(Int, Code)]
 unmutedBlocks ls = filter (not . lMuted . (!!0) . snd) $ allBlocks 0 ls
 
 scSub = do udp <- udpServer "127.0.0.1" 0
-           remote_addr <- N.inet_addr "127.0.0.1"
-           let remote_sockaddr = N.SockAddrInet 57110 remote_addr
-           sendTo udp (p_message "/notify" []) remote_sockaddr
+           remote_addr <- resolve "127.0.0.1" "57110"
+           remote_sockaddr <- N.socket (N.addrFamily remote_addr) (N.addrSocketType remote_addr) (N.addrProtocol remote_addr)
+           -- remote_addr <- N.inet_addr "127.0.0.1"
+           -- let remote_sockaddr = N.SockAddrInet 57110 remote_addr
+           sendTo udp (p_message "/notify" []) (N.addrAddress remote_addr)
            loop udp
   where loop udp = do m <- recvMessage udp
                       hPutStrLn stderr $ show m
