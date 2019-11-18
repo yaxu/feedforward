@@ -7,6 +7,7 @@ import           System.IO
 import           System.Posix.Signals
 import           Control.Concurrent.MVar
 import           Data.List (intercalate,isPrefixOf)
+import           Sound.Tidal.Utils
 
 data Response = HintOK {parsed :: ControlPattern}
               | HintError {errorMessage :: String}
@@ -77,6 +78,7 @@ hintJob (mIn, mOut) =
            interp (Right t) s =
              do liftIO $ hPutStrLn stderr $ "type: " ++ t
                 p <- Hint.interpret s (Hint.as :: ControlPattern)
+                liftIO $ hPutStrLn stderr $ "first arc: " ++ (show p)
                 liftIO $ putMVar mOut $ HintOK p
                 liftIO $ takeMVar mIn
                 return ()

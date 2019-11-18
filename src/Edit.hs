@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Edit where
 
 {- Feedforward (c) Alex McLean 2018
@@ -35,6 +37,7 @@ import           System.Posix.Signals
 import           Text.Printf
 import           UI.NCurses
 import           Text.Read (readMaybe)
+import qualified Control.Exception as E
 
 import qualified Data.Aeson              as A
 import           GHC.Generics
@@ -148,7 +151,7 @@ sendTidal :: EState -> ControlPattern -> IO ()
 sendTidal s pat = do let pat' = if isJust (sNumber s)
                                 then pat |+ n (pure $ fromIntegral $ fromJust (sNumber s))
                                 else pat
-                     streamReplace (sTidal s) "ffwd" pat'
+                     E.catch (streamReplace (sTidal s) "ffwd" pat') (\(e :: E.SomeException) -> hPutStrLn stderr "Hopefully everything is OK")
 
 updateTags :: Code -> Code
 updateTags ls = assignTags freeTags ls'
@@ -456,7 +459,7 @@ initEState args
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
        -- tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
-       tidal <- liftIO $ startMulti [superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
+       tidal <- liftIO $ startMulti [superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
@@ -1040,13 +1043,12 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
-          where p' = filt id $ p # orbit (pure o)
+          where p' = p # orbit (pure o)
+          -- where p' = filt id $ p # orbit (pure o)
         act _ _ (HintError err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps
-
-        filt i = (|+ hpf ((rangex 1 20000 $ cF 0 ctrl)-1) )
-          where ctrl = show $ 40 + i
+        filt i = selectF (cF 0 (show $ 50 + i)) [id, (# (delayfb (cF 0 (show $ 30 + i)) # delayt (select (cF 0 (show $ 70+i)) [1/3, 1/6]) # lock 1 # delay (cF 0 (show $ 20 + i))))] . selectF (cF 0 (show $ 90 + i)) [id, (# (room (cF 0 (show $ 40 + i)) # sz 0.8))] . selectF (cF 0 (show $ 80 + i)) [id, (# djf (cF 0 (show $ 40 + i)))]
 {-
 filt id = (|* (lpf (rangex 100 10000 $ min 1 <$> 2 * cF 0 ctrl)
                        |* hpf (range 0 4000 $ max 0 <$> ((2 * cF 0 ctrl) - 1))
