@@ -28,6 +28,7 @@ import qualified Network.Socket          as N
 import qualified Network.WebSockets      as WS
 import           Sound.OSC.FD
 import           Sound.Tidal.Context    hiding (when)
+import           Sound.Tidal.Parse      (parseTidal)
 import           System.Directory
 import           System.Environment      (getArgs, lookupEnv)
 import           System.FilePath
@@ -43,7 +44,6 @@ import qualified Data.Aeson              as A
 import           GHC.Generics
 
 import           Change
-import           TidalHint
 
 type Tag = Int
 
@@ -122,8 +122,6 @@ data EState = EState {sCode         :: Code,
                     sColourHilite :: ColorID,
                     sColourWarn   :: ColorID,
                     sColourShaded :: ColorID,
-                    sHintIn       :: MVar String,
-                    sHintOut      :: MVar Response,
                     sTidal        :: Stream,
                     sChangeSet    :: ChangeSet,
                     sLogFH        :: Handle,
@@ -457,7 +455,6 @@ initEState args
        fileWindow <- newWindow 10 20 3 3
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
-       liftIO $ forkIO $ hintJob (mIn, mOut)
        -- tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
        tidal <- liftIO $ startMulti [superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
@@ -475,8 +472,6 @@ initEState args
                                      sColourShaded = shade,
                                      sColourWarn = warn,
                                      -- sHilite = (False, []),
-                                     sHintIn = mIn,
-                                     sHintOut = mOut,
                                      sTidal = tidal,
                                      sChangeSet = [],
                                      sLogFH = logFH,
@@ -1029,23 +1024,22 @@ drawDirs mvS
 evalBlock :: (EState, [ControlPattern]) -> (Int, Code) -> IO (EState, [ControlPattern])
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
-                              liftIO $ putMVar (sHintIn s) code
-                              response <- liftIO $ takeMVar (sHintOut s)
-                              -- liftIO $ hPutStrLn stderr $ "Response: " ++ show response
+                                  parsed = parseTidal code
+                              liftIO $ hPutStrLn stderr $ "parsed: " ++ show parsed
                               mungeOrbit <- mungeOrbitIO
                               liftIO $ hPutStrLn stderr $ "Id: " ++ show id
                               let block = fromJust $ lBlock $ (sCode s) !! n
-                                  (block', ps') = act id (mungeOrbit id) response block
+                                  (block', ps') = act id (mungeOrbit id) parsed block
                                   s' = setBlock n block'
                               -- hPutStrLn stderr $ show $ block
                               -- hPutStrLn stderr $ ">>>>"
                               -- hPutStrLn stderr $ show $ block'
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
-  where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
+  where act id o (Right p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
           where p' = p # orbit (pure o)
           -- where p' = filt id $ p # orbit (pure o)
-        act _ _ (HintError err) b = (b {bStatus = Error}, ps')
+        act _ _ (Left err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps
         filt i = selectF (cF 0 (show $ 50 + i)) [id, (# (delayfb (cF 0 (show $ 30 + i)) # delayt (select (cF 0 (show $ 70+i)) [1/3, 1/6]) # lock 1 # delay (cF 0 (show $ 20 + i))))] . selectF (cF 0 (show $ 90 + i)) [id, (# (room (cF 0 (show $ 40 + i)) # sz 0.8))] . selectF (cF 0 (show $ 80 + i)) [id, (# djf (cF 0 (show $ 40 + i)))]
