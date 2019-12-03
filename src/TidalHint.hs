@@ -67,9 +67,11 @@ hintJob (mIn, mOut) =
      putMVar mOut response
      hintJob (mIn, mOut)
      where hintLoop = do s <- liftIO (readMVar mIn)
-                         t <- Hint.typeChecksWithDetails s
+                         let munged = deltaMini s
+                         t <- Hint.typeChecksWithDetails munged
+                         liftIO $ hPutStrLn stderr $ "munged: " ++ munged
                          --interp check s
-                         interp t s
+                         interp t munged
                          hintLoop
            interp (Left errors) _ = do liftIO $ do putMVar mOut $ HintError $ "Didn't typecheck" ++ (concatMap show errors)
                                                    hPutStrLn stderr $ "error: " ++ (concatMap show errors)
@@ -82,4 +84,3 @@ hintJob (mIn, mOut) =
                 liftIO $ putMVar mOut $ HintOK p
                 liftIO $ takeMVar mIn
                 return ()
-

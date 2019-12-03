@@ -27,7 +27,8 @@ import           Data.Time.Format
 import qualified Network.Socket          as N
 import qualified Network.WebSockets      as WS
 import           Sound.OSC.FD
-import           Sound.Tidal.Context    hiding (when)
+import           Sound.Tidal.Context     hiding (when)
+import           Sound.Tidal.Tempo       (timeToCycles)
 import           System.Directory
 import           System.Environment      (getArgs, lookupEnv)
 import           System.FilePath
@@ -302,16 +303,33 @@ drawFooter s =
 -- rmsBlocks = " ▁▂▃▄▅▆▇█"
 rmsBlocks = " ░▒▓█"
 
+codeEvents :: Rational -> Code -> [(Int,Int,Int)]
+codeEvents t ls = loop 0 ls
+  where loop :: Int -> Code -> [(Int,Int,Int)]
+        loop _ [] = []
+        loop n ((Line {lBlock = Just (Block {bPattern = Just pat})}):ls)
+          = (locs n pat) ++ (loop (n+1) ls)
+        loop n (_:ls) = loop (n+1) ls
+        locs :: Int -> ControlPattern -> [(Int, Int, Int)]
+        locs n pat = concatMap (evToLocs n) $ queryArc pat (Arc t t)
+        evToLocs n (Event {context = Context xs}) = map (toLoc n) xs
+        -- assume an event doesn't span a line..
+        toLoc n ((bx, by), (ex, _)) = (n+by, bx, ex)
+
 drawEditor :: MVar EState -> Curses ()
 drawEditor mvS
-  = do s <- (liftIO $ takeMVar mvS)
+  = do s <- liftIO $ takeMVar mvS
+       tempo <- liftIO $ readMVar $ sTempoMV $ sTidal s
+       t <- liftIO time
+       let c = timeToCycles tempo t
+           events = codeEvents c $ sCode s
        s'' <- updateWindow (sEditWindow s) $ do
          when (sRefresh s) clear
          (h,w) <- windowSize
          let s' = doScroll s (h,w)
          setColor (sColour s')
          let ls = zip (sCode s) [0 ..]
-         mapM_ (drawLine s w) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ ls
+         mapM_ (drawLine s w c events) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ ls
          -- HACK: clear trailing line in case one has been deleted
          -- assumes only one line ever deleted at a time (true so far)
          when (length ls < (fromIntegral $ h - (bottomMargin + topMargin))) $
@@ -321,8 +339,8 @@ drawEditor mvS
        drawFooter s''
        updateWindow (sEditWindow s) $ goCursor s''
        liftIO $ putMVar mvS (s'' {sRefresh = False})
-  where drawLine :: EState -> Integer -> (Integer, (Line, Integer)) -> Update ()
-        drawLine s w (y, (l, n)) =
+  where drawLine :: EState -> Integer -> Rational -> [(Int, Int, Int)] -> (Integer, (Line, Integer)) -> Update ()
+        drawLine s w c events (y, (l, n)) =
           do let scrollX = snd $ sScroll s
                  skipLeft = drop scrollX $ lText l
                  skipBoth = take (fromIntegral $ w - (leftMargin + rightMargin + 1)) $ skipLeft
@@ -331,6 +349,11 @@ drawEditor mvS
              drawString (take (fromIntegral $ w-leftMargin) $ skipBoth ++ repeat ' ')
 
              setColor $ sColourHilite s
+             let drawEvent (x,x') = do moveCursor y (x+leftMargin)
+                                       drawString $ take (fromIntegral $ x'-x) $ drop (fromIntegral x) skipBoth
+                 lineEvents y = map (\(_, x, x') -> (fromIntegral x, fromIntegral x')) $ filter (\(y', _, _) -> y == (fromIntegral (y'-1))) events
+             mapM drawEvent $ lineEvents n
+
              when (scrollX > 0) $
                do moveCursor y leftMargin
                   drawString "<"
@@ -365,7 +388,8 @@ drawEditor mvS
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
                                           drawString $ str
-                        | otherwise = return ()
+                              | otherwise = return ()
+                        
 
 connectCircle :: MVar EState -> Maybe String -> IO (Maybe (Change -> IO ()))
 connectCircle mvS name =
