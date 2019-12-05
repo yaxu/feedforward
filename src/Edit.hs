@@ -83,6 +83,9 @@ lTag l = bTag <$> lBlock l
 lMuted :: Line -> Bool
 lMuted l = fromMaybe False $ bMute <$> lBlock l
 
+lModified :: Line -> Bool
+lModified l = fromMaybe False $ bModified <$> lBlock l
+
 lMute :: Line -> Bool
 lMute Line {lBlock = Just Block {bMute = a}} = a
 lMute _                                      = False
@@ -342,15 +345,18 @@ drawEditor mvS
   where drawLine :: EState -> Integer -> Rational -> [(Int, Int, Int)] -> (Integer, (Line, Integer)) -> Update ()
         drawLine s w c events (y, (l, n)) =
           do let scrollX = snd $ sScroll s
+                 textWidth = w - (leftMargin + rightMargin + 1)
                  skipLeft = drop scrollX $ lText l
-                 skipBoth = take (fromIntegral $ w - (leftMargin + rightMargin + 1)) $ skipLeft
+                 skipBoth = take (fromIntegral textWidth) $ skipLeft
              moveCursor y leftMargin
              setColor (sColour s)
              drawString (take (fromIntegral $ w-leftMargin) $ skipBoth ++ repeat ' ')
 
              setColor $ sColourHilite s
-             let drawEvent (x,x') = do moveCursor y (x+leftMargin)
-                                       drawString $ take (fromIntegral $ x'-x) $ drop (fromIntegral x) skipBoth
+             let drawEvent (x,x') = when (a < textWidth) $ do moveCursor y (a+leftMargin)
+                                                              drawString $ take (fromIntegral $ b-a) $ drop (fromIntegral a) skipBoth
+                                      where a = x - (fromIntegral scrollX)
+                                            b = x' - (fromIntegral scrollX)
                  lineEvents y = map (\(_, x, x') -> (fromIntegral x, fromIntegral x')) $ filter (\(y', _, _) -> y == (fromIntegral (y'-1))) events
              mapM drawEvent $ lineEvents n
 
@@ -937,6 +943,7 @@ insertChar mvS c =
                  s' <- applyChange (s {sXWarp = x'}) change
                  putMVar mvS s'
 
+-- never called?
 backspaceChar :: EState -> EState
 backspaceChar s =
   s {sCode = ls',
@@ -954,6 +961,10 @@ charAt ls (y,x) = (lText $ ls !! y) !! x
 
 lineLength :: Code -> Int -> Int
 lineLength ls y = length $ lText $ ls !! y
+
+findBlock :: Code -> Int -> (Int, Block)
+findBlock ls n | hasBlock (ls !! n) = (0, fromJust $ lBlock $ ls !! n)
+               | otherwise = (\(offset, b) -> (offset-1, b)) $ findBlock ls (n-1)
 
 backspace :: MVar EState -> Curses ()
 backspace mvS =
