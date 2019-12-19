@@ -19,7 +19,7 @@ library
     , ncurses
     , network
     , text
-    , tidal
+    , tidal >= 1.4.6
     , time
     , unix
     , websockets
