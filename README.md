@@ -20,6 +20,43 @@ cd feedforward
 cabal install
 ```
 
+### Installation on Arch
+
+Set these in `~/.cabal/config`
+
+```
+library-vanilla: True
+shared: True
+executable-dynamic: True
+
+program-default-options
+  ghc-options:
+    -dynamic
+```
+
+Then do a `cabal update`
+
+Then clone latest Tidal repository and do a `cabal install` there.
+
+```
+git clone https://github.com/tidalcycles/Tidal.git
+cd Tidal
+cabal install
+```
+
+Then clone this repository, and execute the following
+
+```
+git clone https://github.com/yaxu/feedforward.git
+cd feedforward
+cabal update
+cabal install c2hs
+cabal install ncurses --flag force-narrow-library
+cabal install
+```
+
+
+
 ## VU meters
 
 To get in-text VU meters on patterns, switch on RMS sending from SuperDirt.
