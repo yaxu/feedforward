@@ -55,7 +55,7 @@ executable feedforward
     , time
     , unix
     , websockets
-    , transformers 
+    , transformers
   other-modules:
       Change
       -- Client

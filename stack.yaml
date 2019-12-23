@@ -15,7 +15,9 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-11.11
+resolver: lts-14.18
+
+allow-newer: true
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -40,9 +42,10 @@ packages:
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: 
+extra-deps:
 - ncurses-0.2.16
-
+- git: https://github.com/tidalcycles/Tidal.git
+  commit: 8d692265f7612eeb9ce81bcf9796e29bbb79a07e
 # Override default flag values for local packages and extra-deps
 # flags: {}
 
@@ -66,3 +69,7 @@ extra-deps:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+allow-different-user: true
+flags:
+  ncurses:
+    force-narrow-library: true

@@ -33,8 +33,12 @@ import           System.Directory
 import           System.Environment      (getArgs, lookupEnv)
 import           System.FilePath
 import           System.IO
+
+-- if someone figured out how to get rid of the System.Posix dependencies,
 import           System.Posix.Process
 import           System.Posix.Signals
+-- it would be much easier to build this app on Windows
+
 import           Text.Printf
 import           UI.NCurses
 import           Text.Read (readMaybe)
@@ -395,7 +399,7 @@ drawEditor mvS
                                           moveCursor (fromIntegral y + topMargin - 1) 0
                                           drawString $ str
                               | otherwise = return ()
-                        
+
 
 connectCircle :: MVar EState -> Maybe String -> IO (Maybe (Change -> IO ()))
 connectCircle mvS name =
@@ -446,7 +450,7 @@ connectCircle mvS name =
                                                                     ]
                                                          )
                                                    putMVar mvS s'
-                                       return ()                                       
+                                       return ()
                                 | isPrefixOf "/change " msg =
                                     do let change = A.decode $ encodeUtf8 $ T.pack $ fromJust $ stripPrefix "/change " msg
                                        if (isJust change)
@@ -861,7 +865,7 @@ withTag (l:ls) t f | lTag l == Just t = (f l):ls
 
 toggleMute mvS n =
   do liftIO $ do s <- takeMVar mvS
-                 now <- liftIO $ (realToFrac <$> getPOSIXTime)  
+                 now <- liftIO $ (realToFrac <$> getPOSIXTime)
                  s' <- applyChange s $ MuteToggle {cWhen = now,
                                                    cOrbit = n
                                                   }
@@ -1163,7 +1167,7 @@ startPlayback s offset path =
          filterPre start end (c@(Move {}):cs) = c:(filterPre start end cs)
          filterPre start end (c:cs) | (cWhen c) > end = []
                                     | (cWhen c) >= start = (c:(filterPre start end cs))
-                                    | otherwise = filterPre start end cs 
+                                    | otherwise = filterPre start end cs
 
 
 dumpCode :: Code -> String
