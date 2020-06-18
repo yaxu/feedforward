@@ -6,13 +6,18 @@ https://github.com/yaxu/feedforward
 
 ## Installation
 
-You'll need the ncurses library installed first. For example under
-debian linux, you can do this with `apt-get install
-libncurses5-dev`. Please let me (alex@slab.org) know if you get it
-installed under other systems (particularly windows/mac) and how. (It
-probably will be particularly difficult to install under windows)
+Please let me (alex@slab.org) know if you get it
+installed on Windows 10 and how. 
 
-Install (into ~/.cabal/bin) with:
+### Installation on Debian
+
+First install `ncurses`:
+
+```
+apt-get install libncurses5-dev
+```
+
+Install feedforward (into ~/.cabal/bin) with:
 
 ```
 git clone http://github.com/yaxu/feedforward
@@ -55,7 +60,27 @@ cabal install ncurses --flag force-narrow-library
 cabal install
 ```
 
+### Mac OSX
 
+If you do not have `ncurses` installed already, 
+you can install it on OSX with:
+
+```
+brew install ncurses
+```
+
+`ncurses` install info available at 
+https://gist.github.com/cnruby/960344#gistcomment-3236294
+
+Next, install feedforward into `~/.cabal/bin` with:
+
+```
+git clone http://github.com/yaxu/feedforward
+cd feedforward
+cabal install
+```
+
+Then follow the usage instructions below.
 
 ## VU meters
 
