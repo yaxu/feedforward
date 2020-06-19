@@ -458,22 +458,6 @@ connectCircle mvS name =
                                 | otherwise = return ()
 
 
-catfoodTarget :: OSCTarget
-catfoodTarget = OSCTarget {oName = "hellocatfood",
-                           oAddress = "10.0.0.111",
-                           oPort = 7000,
-                           oPath = "/hellocatfood",
-                           oShape = Just [("s", Nothing),
-                                          ("n", Just $ VF 0),
-                                          ("speed", Just $ VF 1),
-                                          ("pan", Just $ VF 0.5)
-                                         ],
-                           oLatency = 0.01,
-                           oPreamble = [],
-                           oTimestamp = NoStamp
-                          }
-
-
 initEState :: [String] -> Curses (MVar EState)
 initEState args
   = do w <- defaultWindow
@@ -488,8 +472,8 @@ initEState args
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
-       -- tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
-       tidal <- liftIO $ startMulti [superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
+       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
+                (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
