@@ -75,6 +75,8 @@ data Playback = Playback {pbOffset  :: Double,
                           pbHushTime :: Double
                          }
 
+latency = 0.2
+
 dirt = Super
 
 lTag :: Line -> Maybe Tag
@@ -123,6 +125,7 @@ data EState = EState {sCode         :: Code,
                     sEditWindow   :: Window,
                     sFileWindow   :: Window,
                     sColour       :: ColorID,
+                    sColourBlack  :: ColorID,
                     sColourHilite :: ColorID,
                     sColourWarn   :: ColorID,
                     sColourShaded :: ColorID,
@@ -193,8 +196,8 @@ applyChange s (change@(Change {})) = do writeLog s' change
 applyChange s change@(Eval {}) =
   do let blocks = unmutedBlocks $ sCode s
          blocks' = allBlocks 0 $ sCode s
-     hPutStrLn stderr $ "unmuted blocks: " ++ show (length blocks) ++ " of " ++ show (length blocks')
-     hPutStrLn stderr $ show blocks'
+     --hPutStrLn stderr $ "unmuted blocks: " ++ show (length blocks) ++ " of " ++ show (length blocks')
+     --hPutStrLn stderr $ show blocks'
      (s',ps) <- foldM evalBlock (s, []) blocks
      (sendTidal s) (stack ps)
      writeLog s' change
@@ -303,14 +306,14 @@ drawFooter s =
           let str = " " ++ name ++ show (sPos s)
           drawString $ str ++ replicate ((fromIntegral w) - (length str)) ' '
 
--- rmsBlocks = " ▁▂▃▄▅▆▇█"
-rmsBlocks = " ░▒▓█"
+rmsBlocks = " ▁▂▃▄▅▆▇█"
+-- rmsBlocks = " ░▒▓█"
 
 codeEvents :: Rational -> Code -> [(Int,Int,Int)]
 codeEvents t ls = loop 0 ls
   where loop :: Int -> Code -> [(Int,Int,Int)]
         loop _ [] = []
-        loop n ((Line {lBlock = Just (Block {bPattern = Just pat})}):ls)
+        loop n ((Line {lBlock = Just (Block {bPattern = Just pat, bMute = False})}):ls)
           = (locs n pat) ++ (loop (n+1) ls)
         loop n (_:ls) = loop (n+1) ls
         locs :: Int -> ControlPattern -> [(Int, Int, Int)]
@@ -324,7 +327,7 @@ drawEditor mvS
   = do s <- liftIO $ takeMVar mvS
        tempo <- liftIO $ readMVar $ sTempoMV $ sTidal s
        t <- liftIO time
-       let c = timeToCycles tempo t
+       let c = timeToCycles tempo (t-latency)
            events = codeEvents c $ sCode s
        s'' <- updateWindow (sEditWindow s) $ do
          when (sRefresh s) clear
@@ -335,11 +338,12 @@ drawEditor mvS
          mapM_ (drawLine s w c events) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ ls
          -- HACK: clear trailing line in case one has been deleted
          -- assumes only one line ever deleted at a time (true so far)
+         setColor (sColourBlack s')
          when (length ls < (fromIntegral $ h - (bottomMargin + topMargin))) $
            do moveCursor (1 + (fromIntegral $ length ls)) 0
               drawString $ take (fromIntegral w) $ repeat ' '
          return s'
-       drawFooter s''
+       -- drawFooter s''
        updateWindow (sEditWindow s) $ goCursor s''
        liftIO $ putMVar mvS (s'' {sRefresh = False})
   where drawLine :: EState -> Integer -> Rational -> [(Int, Int, Int)] -> (Integer, (Line, Integer)) -> Update ()
@@ -350,11 +354,12 @@ drawEditor mvS
                  skipBoth = take (fromIntegral textWidth) $ skipLeft
              moveCursor y leftMargin
              setColor (sColour s)
-             drawString (take (fromIntegral $ w-leftMargin) $ skipBoth ++ repeat ' ')
-
+             drawString (take (fromIntegral $ w-leftMargin) $ skipBoth)
+             setColor (sColourBlack s)
+             drawString (take (fromIntegral $ w-leftMargin - (fromIntegral $ length skipBoth)) $ repeat ' ')
              setColor $ sColourHilite s
-             let drawEvent (x,x') = when (a < textWidth) $ do moveCursor y (a+leftMargin)
-                                                              drawString $ take (fromIntegral $ b-a) $ drop (fromIntegral a) skipBoth
+             let drawEvent (x,x') = when (a >= 0 && a < textWidth) $ do moveCursor y (a+leftMargin)
+                                                                        drawString $ take (fromIntegral $ b-a) $ drop (fromIntegral a) skipBoth
                                       where a = x - (fromIntegral scrollX)
                                             b = x' - (fromIntegral scrollX)
                  lineEvents y = map (\(_, x, x') -> (fromIntegral x, fromIntegral x')) $ filter (\(y', _, _) -> y == (fromIntegral (y'-1))) events
@@ -388,8 +393,8 @@ drawEditor mvS
                                                drawString "  "
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
-                                              rmsL = min rmsMax $ floor $ 275 * ((sRMS s) !! (id*2))
-                                              rmsR = min rmsMax $ floor $ 275 * ((sRMS s) !! (id*2+1))
+                                              rmsL = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*2))
+                                              rmsR = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*2+1))
                                               str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
@@ -414,7 +419,7 @@ connectCircle mvS name =
                   forkIO $ forever $ do
                     msg <- WS.receiveData conn
                     circleAct conn $ T.unpack msg
-                    hPutStrLn stderr $ T.unpack msg
+                    -- hPutStrLn stderr $ T.unpack msg
                   let loop = do
                         change <- takeMVar mChange
                         WS.sendTextData conn (T.append (T.pack "/change ") $ decodeUtf8 $ A.encode change) >> loop
@@ -435,11 +440,11 @@ connectCircle mvS name =
                                     do let args = words $ fromJust $ stripPrefix "/replay " msg
                                            session_name = head args
                                            offset = (read (args !! 1)) :: Double
-                                       liftIO $ do hPutStrLn stderr $ "args: " ++ show args
+                                       liftIO $ do -- hPutStrLn stderr $ "args: " ++ show args
                                                    delAll mvS
                                                    s <- takeMVar mvS
                                                    let name = fromMaybe "anon" $ sName s
-                                                   hPutStrLn stderr $ "replay "
+                                                   -- hPutStrLn stderr $ "replay "
                                                    s' <- (startPlayback s offset $
                                                            joinPath ["sessions",
                                                                      session_name ++ "-" ++ name ++ ".json"
@@ -457,7 +462,7 @@ connectCircle mvS name =
                                        return ()
                                 | otherwise = return ()
 
-
+{-
 catfoodTarget :: OSCTarget
 catfoodTarget = OSCTarget {oName = "hellocatfood",
                            oAddress = "10.0.0.111",
@@ -472,7 +477,7 @@ catfoodTarget = OSCTarget {oName = "hellocatfood",
                            oPreamble = [],
                            oTimestamp = NoStamp
                           }
-
+-}
 
 initEState :: [String] -> Curses (MVar EState)
 initEState args
@@ -480,16 +485,19 @@ initEState args
        updateWindow w clear
        setEcho False
        setKeypad w True
-       fg <- newColorID ColorWhite ColorDefault 1
-       bg <- newColorID ColorBlack ColorWhite 2
-       shade <- newColorID ColorBlack ColorBlue 2
-       warn <- newColorID ColorWhite ColorRed 3
+       fg <- newColorID ColorWhite ColorBlue 1
+       black <- newColorID ColorWhite ColorDefault 2
+       bg <- newColorID ColorBlack ColorWhite 3
+       shade <- newColorID ColorBlack ColorBlue 4
+       warn <- newColorID ColorWhite ColorRed 5
        fileWindow <- newWindow 10 20 3 3
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
        -- tidal <- liftIO $ startMulti [catfoodTarget, superdirtTarget {oLatency = 0.1, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
-       tidal <- liftIO $ startMulti [superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
+       -- tidal <- liftIO $ startMulti [superdirtTarget {oLatency = latency, oAddress = "127.0.0.1", oPort = 57120}] (defaultConfig {cFrameTimespan = 1/20})
+       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
+                (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
@@ -501,6 +509,7 @@ initEState args
                                      sFileWindow = fileWindow,
                                      sXWarp = 0,
                                      sColour = fg,
+                                     sColourBlack = black,
                                      sColourHilite = bg,
                                      sColourShaded = shade,
                                      sColourWarn = warn,
@@ -638,6 +647,7 @@ listenRMS mvS = do let port = case dirt of
                          sendTo udp (p_message "/notify" [int32 1]) (N.addrAddress remote_addr)
                   | otherwise = return ()
 
+resolve :: [Char] -> [Char] -> IO N.AddrInfo
 resolve host port = do let hints = N.defaultHints { N.addrSocketType = N.Stream }
                        addr:_ <- N.getAddrInfo (Just hints) (Just host) (Just port)
                        return addr
@@ -779,10 +789,14 @@ mainLoop mvS = loop where
              PlaybackMode -> drawEditor mvS
             render
 
-            ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
-            done <- handleEv mvS (sMode s) ev
+            done <- catchCurses (do ev <- getEvent (sEditWindow s) (Just (1000 `div` 20))
+                                    handleEv mvS (sMode s) ev
+                                ) handler
             updateScreen mvS (sMode s)
             unless done loop
+  handler :: CursesException -> Curses Bool
+  handler ex = do liftIO $ hPutStrLn stderr $ "Caught exception: " ++ show ex
+                  return False
 
 updateScreen :: MVar EState -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
@@ -1078,8 +1092,8 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
-          where p' = p # orbit (pure o)
-          -- where p' = filt id $ p # orbit (pure o)
+          -- where p' = p # orbit (pure o)
+          where p' = filt id $ p # orbit (pure o)
         act _ _ (HintError err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps
@@ -1114,6 +1128,7 @@ allBlocks n (l:ls) | hasBlock l = (n,b):(allBlocks (n+(length b)+1) ls')
 unmutedBlocks :: Code -> [(Int, Code)]
 unmutedBlocks ls = filter (not . lMuted . (!!0) . snd) $ allBlocks 0 ls
 
+-- TODO - it seems this isn't actually called but is duplicated above..
 scSub = do udp <- udpServer "127.0.0.1" 0
            remote_addr <- resolve "127.0.0.1" "57110"
            remote_sockaddr <- N.socket (N.addrFamily remote_addr) (N.addrSocketType remote_addr) (N.addrProtocol remote_addr)
@@ -1122,7 +1137,7 @@ scSub = do udp <- udpServer "127.0.0.1" 0
            sendTo udp (p_message "/notify" []) (N.addrAddress remote_addr)
            loop udp
   where loop udp = do m <- recvMessage udp
-                      hPutStrLn stderr $ show m
+                      -- hPutStrLn stderr $ show m
                       loop udp
 
 selectedPath fc = fcPath fc ++ [selected]
@@ -1131,7 +1146,7 @@ selectedPath fc = fcPath fc ++ [selected]
 startPlayback :: EState -> Double -> FilePath -> IO EState
 startPlayback s offset path =
   do now <- (realToFrac <$> getPOSIXTime)
-     hPutStrLn stderr $ show $ logDirectory </> path
+     -- hPutStrLn stderr $ show $ logDirectory </> path
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
