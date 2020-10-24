@@ -69,7 +69,7 @@ hintJob (mIn, mOut) =
      where hintLoop = do s <- liftIO (readMVar mIn)
                          let munged = deltaMini s
                          t <- Hint.typeChecksWithDetails munged
-                         liftIO $ hPutStrLn stderr $ "munged: " ++ munged
+                         -- liftIO $ hPutStrLn stderr $ "munged: " ++ munged
                          --interp check s
                          interp t munged
                          hintLoop
@@ -78,9 +78,9 @@ hintJob (mIn, mOut) =
                                                    takeMVar mIn
                                        return ()
            interp (Right t) s =
-             do liftIO $ hPutStrLn stderr $ "type: " ++ t
+             do -- liftIO $ hPutStrLn stderr $ "type: " ++ t
                 p <- Hint.interpret s (Hint.as :: ControlPattern)
-                liftIO $ hPutStrLn stderr $ "first arc: " ++ (show p)
+                -- liftIO $ hPutStrLn stderr $ "first arc: " ++ (show p)
                 liftIO $ putMVar mOut $ HintOK p
                 liftIO $ takeMVar mIn
                 return ()
