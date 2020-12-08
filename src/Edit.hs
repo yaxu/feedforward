@@ -819,6 +819,8 @@ keyCtrl mvS 'f' = move mvS (0,1)
 
 keyCtrl mvS 'd' = del mvS
 keyCtrl mvS 'k' = killLine mvS
+-- TODO: find a better key combination for comment line
+keyCtrl mvS 'r' = commentLine mvS
 
 keyCtrl mvS 'j' = insertBreak mvS
 
@@ -1007,6 +1009,16 @@ killLine mvS =
          change | x < (length $ lText l) = Just $ deleteChange (y,x) (y,(length $ lText l)) [postX]
                 | y == ((length ls) - 1) = Nothing
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
+     s' <- liftIO $ maybe (return s) (applyChange s) change
+     liftIO $ putMVar mvS s'
+
+commentLine :: MVar EState -> Curses ()
+commentLine mvS =
+  do s <- liftIO $ takeMVar mvS
+     now <- liftIO $ realToFrac <$> getPOSIXTime
+     let (ls, (y,x), _, l, _, _, postX) = cursorContext s
+         change | isPrefixOf "--" $ lText l = Just $ deleteChange (y,0) (y,2) [postX]
+                | otherwise = Just $ (insertChange (y,0) ["--"]) {cWhen = now}
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
 
