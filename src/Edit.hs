@@ -252,32 +252,6 @@ applyDelete s change = preL ++ ((Line (lBlock l) $ preX ++ postX):postL)
   where (_, _, preL, l, _, preX, _) = cursorContext' s (cFrom change)
         (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
 
-insertChange :: Pos -> [String] -> Change
-insertChange (y,x) str = Change {cFrom = (y,x),
-                                 cTo = (y,x),
-                                 cText = str,
-                                 cRemoved = [""],
-                                 cOrigin = "+input",
-                                 cWhen = -1,
-                                 cNewPos = (y',x')
-                                }
-  where y' = y + ((length str) - 1)
-        x' | length str == 1 = x + (length $ head str)
-           | otherwise = length $ last str
-
-evalChange :: Change
-evalChange = Eval {cWhen = -1, cAll = True}
-
-deleteChange :: Pos -> Pos -> [String] -> Change
-deleteChange from to removed = Change {cFrom = from,
-                                       cTo = to,
-                                       cText = [""],
-                                       cRemoved = removed,
-                                       cOrigin = "+delete",
-                                       cWhen = -1,
-                                       cNewPos = from
-                                      }
-
 goCursor state = moveCursor ((topMargin + (fromIntegral $ fst $ sPos state))-sY) ((leftMargin + fromIntegral (snd $ sPos state)) - sX)
   where sY = fromIntegral $ fst $ sScroll state
         sX = fromIntegral $ snd $ sScroll state

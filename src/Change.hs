@@ -51,3 +51,29 @@ instance A.ToJSON Change
 instance A.FromJSON Change
 
 type ChangeSet = [Change]
+
+evalChange :: Change
+evalChange = Eval {cWhen = -1, cAll = True}
+
+insertChange :: Pos -> [String] -> Change
+insertChange (y,x) str = Change {cFrom = (y,x),
+                                 cTo = (y,x),
+                                 cText = str,
+                                 cRemoved = [""],
+                                 cOrigin = "+input",
+                                 cWhen = -1,
+                                 cNewPos = (y',x')
+                                }
+  where y' = y + length str - 1
+        x' | length str == 1 = x + (length $ head str)
+           | otherwise = length $ last str
+
+deleteChange :: Pos -> Pos -> [String] -> Change
+deleteChange from to removed = Change {cFrom = from,
+                                       cTo = to,
+                                       cText = [""],
+                                       cRemoved = removed,
+                                       cOrigin = "+delete",
+                                       cWhen = -1,
+                                       cNewPos = from
+                                      }
