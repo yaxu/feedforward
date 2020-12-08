@@ -184,8 +184,8 @@ updateTags ls = assignTags freeTags ls'
 applyChange :: EState -> Change -> IO (EState)
 applyChange s (change@(Change {})) = do writeLog s' change
                                         return s'
-  where ls | (cOrigin change) == "+input" = updateTags $ applyInput s change
-           | (cOrigin change) == "+delete" = updateTags $ applyDelete s change
+  where ls | (cOrigin change) == Input = updateTags $ applyInput s change
+           | (cOrigin change) == Delete = updateTags $ applyDelete s change
            | otherwise = sCode s
         changes = sChangeSet s
         s' = s {sChangeSet = change:changes,
