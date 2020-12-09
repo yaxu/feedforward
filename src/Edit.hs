@@ -793,8 +793,6 @@ keyCtrl mvS 'f' = move mvS (0,1)
 
 keyCtrl mvS 'd' = del mvS
 keyCtrl mvS 'k' = killLine mvS
--- TODO: find a better key combination for comment line
-keyCtrl mvS 'r' = commentLine mvS
 
 keyCtrl mvS 'j' = insertBreak mvS
 
@@ -805,11 +803,12 @@ keyCtrl mvS 'h' = stopAll mvS
 
 keyCtrl mvS 'l' = liftIO $ modifyMVar_ mvS $ \s -> return $ s {sRefresh = True}
 
-
 keyCtrl mvS _ = return ()
 
 keyAlt mvS '\n' = eval mvS
 keyAlt mvS 'h' = stopAll mvS
+
+keyAlt mvS '-' = commentLine mvS
 
 keyAlt mvS '0' = toggleMute mvS 0
 keyAlt mvS '1' = toggleMute mvS 1
@@ -987,14 +986,18 @@ killLine mvS =
      liftIO $ putMVar mvS s'
 
 commentLine :: MVar EState -> Curses ()
-commentLine mvS =
-  do s <- liftIO $ takeMVar mvS
-     now <- liftIO $ realToFrac <$> getPOSIXTime
-     let (ls, (y,x), _, l, _, _, postX) = cursorContext s
-         change | isPrefixOf "--" $ lText l = Just $ deleteChange (y,0) (y,2) [postX]
-                | otherwise = Just $ (insertChange (y,0) ["--"]) {cWhen = now}
-     s' <- liftIO $ maybe (return s) (applyChange s) change
-     liftIO $ putMVar mvS s'
+commentLine = liftIO . commentLine'
+
+commentLine' :: MVar EState -> IO ()
+commentLine' mvS = do
+  s <- takeMVar mvS
+  now <- realToFrac <$> getPOSIXTime
+  let (ls, (y,x), _, l, _, _, postX) = cursorContext s
+      change | isPrefixOf "--" $ lText l = Just $ deleteChange (y,0) (y,2) [postX]
+             | otherwise = Just $ (insertChange (y,0) ["--"]) {cWhen = now}
+  s' <- maybe (return s) (applyChange s) change
+  putMVar mvS s'
+
 
 fileTime :: FilePath -> String
 fileTime fp = h ++ (':':m) ++ (':':s)
