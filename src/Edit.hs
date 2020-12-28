@@ -71,8 +71,8 @@ data Dirt = Classic | Super
           deriving Eq
 
 data Playback = Playback {pbOffset  :: Double,
-                          pbChanges :: [Change],
-                          pbHushTime :: Double
+                          pbChanges :: [Change]
+                          --pbHushTime :: Double
                          }
 
 latency = 0.2
@@ -515,6 +515,15 @@ initEState args
                                      sRefresh = False,
                                      sLastAlt = 0
                                     }
+       -- hack to load a json file from a session folder
+       when ((length args) == 2) $
+         do let session_file = head args
+                offset = (read (args !! 1)) :: Double
+            liftIO $ do
+              delAll mvS
+              s <- takeMVar mvS
+              s' <- startPlayback s offset session_file
+              putMVar mvS s'
        return mvS
 
 moveHome :: MVar EState -> Curses ()
@@ -782,7 +791,7 @@ mainLoop mvS = loop where
 updateScreen :: MVar EState -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
   = do s <- liftIO $ takeMVar mvS
-       let (Playback offset cs hushTime) = fromJust $ sPlayback s
+       let (Playback offset cs {-hushTime-}) = fromJust $ sPlayback s
        now <- liftIO $ (realToFrac <$> getPOSIXTime)
        -- let cs' = filterPre cs offset
        --liftIO $ hPutStrLn stderr $ "offset: " ++ show (offset)
@@ -790,7 +799,7 @@ updateScreen mvS PlaybackMode
        --liftIO $ hPutStrLn stderr $ "post: " ++ show (length cs')
        let (ready, waiting) = takeReady cs (now - offset)
        s' <- liftIO $ foldM applyChange s ready
-       liftIO $ if now >= hushTime
+       {-liftIO $ if now >= hushTime
                 then do hPutStrLn stderr ("hush! " ++ show hushTime)
                         (sendTidal s) silence
                         putMVar mvS (s' {sPlayback = Nothing,
@@ -801,7 +810,8 @@ updateScreen mvS PlaybackMode
                                          sMode = EditMode
                                         }
                                     )
-                else putMVar mvS (s' {sPlayback = Just $ Playback offset waiting hushTime})
+                else -}
+       liftIO $ putMVar mvS (s' {sPlayback = Just $ Playback offset waiting {-hushTime-}})
        return ()
          where takeReady cs t = (takeWhile (\c -> (cWhen c) < t) cs,
                                  dropWhile (\c -> (cWhen c) < t) cs
@@ -1131,23 +1141,24 @@ startPlayback s offset path =
      fh <- openFile (logDirectory </> path) ReadMode
      c <- hGetContents fh
      let ls = lines c
-         ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
-         hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
+         -- ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
+         -- hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
          changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
-         changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
-         offset' = (now - ffwdTo) + offset
-         hushTime = now + hushDelta
-         playback = Playback {pbChanges = changes',
-                              pbOffset = offset',
-                              pbHushTime = hushTime
+         -- changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
+         -- offset' = (now - ffwdTo) + offset
+         offset' = offset
+         --hushTime = now + hushDelta
+         playback = Playback {pbChanges = changes,
+                              pbOffset = offset'
+                              {- pbHushTime = hushTime -}
                              }
      hPutStrLn stderr $ "offset: " ++ show offset
-     hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
-     hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
-     hPutStrLn stderr $ "now: " ++ show ffwdTo
+     -- hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
+     -- hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
+     hPutStrLn stderr $ "now: " ++ show now
      hPutStrLn stderr $ "offset': " ++ show offset'
      hPutStrLn stderr $ "changes: " ++ show (length changes)
-     hPutStrLn stderr $ "changes': " ++ show (length changes')
+     -- hPutStrLn stderr $ "changes': " ++ show (length changes')
      return $ s {sPlayback = Just playback,
                  sMode = PlaybackMode,
                  sRefresh = True
