@@ -75,6 +75,7 @@ data Playback = Playback {pbOffset  :: Double,
                           --pbHushTime :: Double
                          }
 
+channels = 8
 latency = 0.2
 
 dirt = Super
@@ -393,9 +394,8 @@ drawEditor mvS
                                                drawString "  "
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
-                                              rmsL = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*2))
-                                              rmsR = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*2+1))
-                                              str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
+                                              str = map (\n -> rmsBlocks !! (rmsn n)) [0 .. channels-1]
+                                              rmsn n = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*channels+n))
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
                                           drawString $ str
@@ -500,7 +500,7 @@ initEState args
                                      sTidal = tidal,
                                      sChangeSet = [],
                                      sLogFH = logFH,
-                                     sRMS = replicate 20 0,
+                                     sRMS = replicate (10*channels) 0,
                                      sScroll = (0,0),
                                      sMode = EditMode,
                                      sFileChoice = FileChoice {fcPath = [],
@@ -520,6 +520,7 @@ initEState args
          do let session_file = head args
                 offset = (read (args !! 1)) :: Double
             liftIO $ do
+              putStrLn $ "Loading " ++ session_file
               delAll mvS
               s <- takeMVar mvS
               s' <- startPlayback s offset session_file
@@ -623,10 +624,11 @@ listenRMS mvS = do let port = case dirt of
       do s <- takeMVar mvS
          mungeOrbit <- mungeOrbitIO
          let orbit = mungeOrbit $ fromMaybe 0 $ datum_integral $ messageDatum m !! 1
-             l = fromMaybe 0 $ datum_floating $ messageDatum m !! 3
-             r = fromMaybe 0 $ datum_floating $ messageDatum m !! 5
+             chanrms = map (\n -> fromMaybe 0 $ datum_floating $
+                             messageDatum m !! ((n*2) + 3)
+                           ) [0 .. channels - 1]
              rms = sRMS s
-             rms' = take (orbit*2) rms ++ [l,r] ++ drop ((orbit*2)+2) rms
+             rms' = take (orbit*channels) rms ++ chanrms ++ drop ((orbit+1)*(channels)) rms
          putMVar mvS $ s {sRMS = rms'}
     act _ = return ()
     subscribe udp | dirt == Super =
@@ -797,6 +799,9 @@ updateScreen mvS PlaybackMode
        --liftIO $ hPutStrLn stderr $ "offset: " ++ show (offset)
        --liftIO $ hPutStrLn stderr $ "pre: " ++ show (length cs)
        --liftIO $ hPutStrLn stderr $ "post: " ++ show (length cs')
+       -- liftIO $ hPutStrLn stderr $ "cwhen: " ++ (show $ cWhen $ head cs)
+
+       -- liftIO $ hPutStrLn stderr $ "t: " ++ (show $ now - offset)
        let (ready, waiting) = takeReady cs (now - offset)
        s' <- liftIO $ foldM applyChange s ready
        {-liftIO $ if now >= hushTime
@@ -1138,25 +1143,24 @@ startPlayback :: EState -> Double -> FilePath -> IO EState
 startPlayback s offset path =
   do now <- (realToFrac <$> getPOSIXTime)
      -- hPutStrLn stderr $ show $ logDirectory </> path
-     fh <- openFile (logDirectory </> path) ReadMode
+     fh <- openFile (path) ReadMode
      c <- hGetContents fh
      let ls = lines c
          -- ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
          -- hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
          changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
+         ffwdTo = cWhen $ head changes
          -- changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
          -- offset' = (now - ffwdTo) + offset
-         offset' = offset
          --hushTime = now + hushDelta
          playback = Playback {pbChanges = changes,
-                              pbOffset = offset'
+                              pbOffset = (now - ffwdTo) + offset
                               {- pbHushTime = hushTime -}
                              }
      hPutStrLn stderr $ "offset: " ++ show offset
      -- hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
      -- hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
      hPutStrLn stderr $ "now: " ++ show now
-     hPutStrLn stderr $ "offset': " ++ show offset'
      hPutStrLn stderr $ "changes: " ++ show (length changes)
      -- hPutStrLn stderr $ "changes': " ++ show (length changes')
      return $ s {sPlayback = Just playback,
