@@ -44,28 +44,9 @@ import qualified Data.Aeson              as A
 import           GHC.Generics
 
 import           Change
+import           Code
 import           TidalHint
 
-type Tag = Int
-
-data Status = Success | Error | Normal
-            deriving (Show, Eq)
-
-data Block = Block {bTag      :: Tag,
-                    bModified :: Bool,
-                    bStatus   :: Status,
-                    bPattern  :: Maybe ControlPattern,
-                    bMute     :: Bool,
-                    bSolo     :: Bool
-                   }
-             deriving Show
-
-data Line = Line {lBlock :: Maybe Block,
-                  lText  :: String
-                 }
-             deriving Show
-
-type Code = [Line]
 
 data Dirt = Classic | Super
           deriving Eq
@@ -74,40 +55,9 @@ data Playback = Playback {pbOffset  :: Double,
                           pbChanges :: [Change],
                           pbHushTime :: Double
                          }
-
 latency = 0.2
 
 dirt = Super
-
-lTag :: Line -> Maybe Tag
-lTag l = bTag <$> lBlock l
-
-lMuted :: Line -> Bool
-lMuted l = fromMaybe False $ bMute <$> lBlock l
-
-lModified :: Line -> Bool
-lModified l = fromMaybe False $ bModified <$> lBlock l
-
-lMute :: Line -> Bool
-lMute Line {lBlock = Just Block {bMute = a}} = a
-lMute _                                      = False
-
-lStatus :: Line -> Maybe Status
-lStatus l = bStatus <$> lBlock l
-
-setTag :: Line -> Tag -> Line
-setTag l@(Line {lBlock = Just b}) tag = l {lBlock = Just (b {bTag = tag})}
-setTag l@(Line {lBlock = Nothing}) tag
-  = l {lBlock = Just (Block {bTag = tag,
-                             bModified=True,
-                             bStatus = Normal,
-                             bPattern = Nothing,
-                             bMute = False,
-                             bSolo = False
-                            }
-                     )
-      }
-
 
 type CpsUtils = (Double -> IO (), Double -> IO (), IO Rational)
 
@@ -151,41 +101,17 @@ bottomMargin = 2 :: Integer
 leftMargin   = 3 :: Integer
 rightMargin  = 0 :: Integer
 
-hasChar :: Line -> Bool
-hasChar = any (/= ' ') . lText
-
 sendTidal :: EState -> ControlPattern -> IO ()
 sendTidal s pat = do let pat' = if isJust (sNumber s)
                                 then pat |+ n (pure $ fromIntegral $ fromJust (sNumber s))
                                 else pat
                      E.catch (streamReplace (sTidal s) "ffwd" pat') (\(e :: E.SomeException) -> hPutStrLn stderr "Hopefully everything is OK")
 
-updateTags :: Code -> Code
-updateTags ls = assignTags freeTags ls'
-  where assignTags :: [Tag] -> Code -> Code
-        assignTags [] (l:ls) = l:ls
-        assignTags _ [] = []
-        assignTags ids (l:ls) | lTag l == Just (-1) = setTag l (head ids):(assignTags (tail ids) ls)
-                              | otherwise = l:(assignTags ids ls)
-        freeTags = ([1 .. 9]++[0]) \\ tagIds
-        tagIds = mapMaybe lTag ls'
-        ls' = map tag toTag
-        tag :: (Bool, Line) -> Line
-        tag (False, l) = l {lBlock = Nothing}
-        tag (True, l) | isJust (lTag l) = l
-                      | otherwise = setTag l (-1) -- mark to tag
-        toTag :: [(Bool, Line)]
-        toTag = taggable True ls
-        taggable :: Bool -> Code -> [(Bool, Line)]
-        taggable _ [] = []
-        taggable prevEmpty (l:ls) = (prevEmpty && (not empty), l):(taggable empty ls)
-          where empty = not $ hasChar l
-
 applyChange :: EState -> Change -> IO (EState)
 applyChange s (change@(Change {})) = do writeLog s' change
                                         return s'
-  where ls | (cOrigin change) == "+input" = updateTags $ applyInput s change
-           | (cOrigin change) == "+delete" = updateTags $ applyDelete s change
+  where ls | (cOrigin change) == Input = updateTags $ applyInput s change
+           | (cOrigin change) == Delete = updateTags $ applyDelete s change
            | otherwise = sCode s
         changes = sChangeSet s
         s' = s {sChangeSet = change:changes,
@@ -233,9 +159,6 @@ applyChange s _ =
   do hPutStrLn stderr $ "unhandled change type"
      return s
 
-withLineText :: Line -> (String -> String)  -> Line
-withLineText (Line tag text) f = Line tag (f text )
-
 applyInput :: EState -> Change -> Code
 applyInput s change = preL ++ addedWithBlock ++ postL
   where (ls, (y,x), preL, l, postL, preX, postX) = cursorContext' s (cFrom change)
@@ -251,32 +174,6 @@ applyDelete :: EState -> Change -> Code
 applyDelete s change = preL ++ ((Line (lBlock l) $ preX ++ postX):postL)
   where (_, _, preL, l, _, preX, _) = cursorContext' s (cFrom change)
         (_, _, _, _, postL, _, postX) = cursorContext' s (cTo change)
-
-insertChange :: Pos -> [String] -> Change
-insertChange (y,x) str = Change {cFrom = (y,x),
-                                 cTo = (y,x),
-                                 cText = str,
-                                 cRemoved = [""],
-                                 cOrigin = "+input",
-                                 cWhen = -1,
-                                 cNewPos = (y',x')
-                                }
-  where y' = y + ((length str) - 1)
-        x' | length str == 1 = x + (length $ head str)
-           | otherwise = length $ last str
-
-evalChange :: Change
-evalChange = Eval {cWhen = -1, cAll = True}
-
-deleteChange :: Pos -> Pos -> [String] -> Change
-deleteChange from to removed = Change {cFrom = from,
-                                       cTo = to,
-                                       cText = [""],
-                                       cRemoved = removed,
-                                       cOrigin = "+delete",
-                                       cWhen = -1,
-                                       cNewPos = from
-                                      }
 
 goCursor state = moveCursor ((topMargin + (fromIntegral $ fst $ sPos state))-sY) ((leftMargin + fromIntegral (snd $ sPos state)) - sX)
   where sY = fromIntegral $ fst $ sScroll state
@@ -308,19 +205,6 @@ drawFooter s =
 
 rmsBlocks = " ▁▂▃▄▅▆▇█"
 -- rmsBlocks = " ░▒▓█"
-
-codeEvents :: Rational -> Code -> [(Int,Int,Int)]
-codeEvents t ls = loop 0 ls
-  where loop :: Int -> Code -> [(Int,Int,Int)]
-        loop _ [] = []
-        loop n ((Line {lBlock = Just (Block {bPattern = Just pat, bMute = False})}):ls)
-          = (locs n pat) ++ (loop (n+1) ls)
-        loop n (_:ls) = loop (n+1) ls
-        locs :: Int -> ControlPattern -> [(Int, Int, Int)]
-        locs n pat = concatMap (evToLocs n) $ queryArc pat (Arc t t)
-        evToLocs n (Event {context = Context xs}) = map (toLoc n) xs
-        -- assume an event doesn't span a line..
-        toLoc n ((bx, by), (ex, _)) = (n+by, bx, ex)
 
 drawEditor :: MVar EState -> Curses ()
 drawEditor mvS
@@ -829,11 +713,12 @@ keyCtrl mvS 'h' = stopAll mvS
 
 keyCtrl mvS 'l' = liftIO $ modifyMVar_ mvS $ \s -> return $ s {sRefresh = True}
 
-
 keyCtrl mvS _ = return ()
 
 keyAlt mvS '\n' = eval mvS
 keyAlt mvS 'h' = stopAll mvS
+
+keyAlt mvS '-' = commentLine mvS
 
 keyAlt mvS '0' = toggleMute mvS 0
 keyAlt mvS '1' = toggleMute mvS 1
@@ -848,11 +733,6 @@ keyAlt mvS '9' = toggleMute mvS 9
 
 keyAlt mvS c = do liftIO $ hPutStrLn stderr $ "got Alt-" ++ [c]
                   return ()
-
-withTag :: Code -> Tag -> (Line -> Line) -> Code
-withTag [] _ _ = []
-withTag (l:ls) t f | lTag l == Just t = (f l):ls
-                   | otherwise = l:(withTag ls t f)
 
 toggleMute mvS n =
   do liftIO $ do s <- takeMVar mvS
@@ -951,15 +831,6 @@ backspaceChar s =
            | otherwise = Line Nothing $ (take ((length preX) - 1) preX) ++ postX
         ls' = preL ++ (l':postL)
 
-charAt :: Code -> (Int,Int) -> Char
-charAt ls (y,x) = (lText $ ls !! y) !! x
-
-lineLength :: Code -> Int -> Int
-lineLength ls y = length $ lText $ ls !! y
-
-findBlock :: Code -> Int -> (Int, Block)
-findBlock ls n | hasBlock (ls !! n) = (0, fromJust $ lBlock $ ls !! n)
-               | otherwise = (\(offset, b) -> (offset-1, b)) $ findBlock ls (n-1)
 
 backspace :: MVar EState -> Curses ()
 backspace mvS =
@@ -1009,6 +880,20 @@ killLine mvS =
                 | otherwise = Just $ deleteChange (y,x) (y+1,0) ["",""]
      s' <- liftIO $ maybe (return s) (applyChange s) change
      liftIO $ putMVar mvS s'
+
+commentLine :: MVar EState -> Curses ()
+commentLine = liftIO . commentLine'
+
+commentLine' :: MVar EState -> IO ()
+commentLine' mvS = do
+  s <- takeMVar mvS
+  now <- realToFrac <$> getPOSIXTime
+  let (ls, (y,x), _, l, _, _, postX) = cursorContext s
+      change | isPrefixOf "--" $ lText l = Just $ deleteChange (y,0) (y,2) [postX]
+             | otherwise = Just $ (insertChange (y,0) ["--"]) {cWhen = now}
+  s' <- maybe (return s) (applyChange s) change
+  putMVar mvS s'
+
 
 fileTime :: FilePath -> String
 fileTime fp = h ++ (':':m) ++ (':':s)
@@ -1096,19 +981,6 @@ mungeOrbitIO = do orbitOffset <- (read . fromMaybe "0") <$> lookupEnv "ORBIT_OFF
                   orbitMax <- (read . fromMaybe "10") <$> lookupEnv "ORBIT_MAX"
                   return $ \o -> orbitOffset + (o `mod` orbitMax)
 
-hasBlock :: Line -> Bool
-hasBlock = isJust . lBlock
-
-allBlocks :: Int -> Code -> [(Int, Code)]
-allBlocks _ [] = []
-allBlocks n (l:ls) | hasBlock l = (n,b):(allBlocks (n+(length b)+1) ls')
-                   | otherwise = allBlocks (n+1) ls
-  where b = takeWhile hasChar (l:ls)
-        ls' = drop (length b) ls
-
-unmutedBlocks :: Code -> [(Int, Code)]
-unmutedBlocks ls = filter (not . lMuted . (!!0) . snd) $ allBlocks 0 ls
-
 -- TODO - it seems this isn't actually called but is duplicated above..
 scSub = do udp <- udpServer "127.0.0.1" 0
            remote_addr <- resolve "127.0.0.1" "57110"
@@ -1160,10 +1032,3 @@ startPlayback s offset path =
          filterPre start end (c:cs) | (cWhen c) > end = []
                                     | (cWhen c) >= start = (c:(filterPre start end cs))
                                     | otherwise = filterPre start end cs 
-
-
-dumpCode :: Code -> String
-dumpCode ls = unlines $ map lText ls
-
-unDumpCode :: String -> Code
-unDumpCode s = updateTags $ map (Line Nothing) $ lines s
