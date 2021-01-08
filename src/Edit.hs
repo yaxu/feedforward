@@ -890,7 +890,7 @@ commentLine' mvS = do
   now <- realToFrac <$> getPOSIXTime
   let (ls, (y,x), _, l, _, _, postX) = cursorContext s
       change | isPrefixOf "--" $ lText l = Just $ deleteChange (y,0) (y,2) [postX]
-             | otherwise = Just $ (insertChange (y,0) ["--"]) {cWhen = now}
+             | otherwise = Just $ (insertChange (y,0) ["-- "]) {cWhen = now}
   s' <- maybe (return s) (applyChange s) change
   putMVar mvS s'
 
