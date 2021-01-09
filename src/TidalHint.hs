@@ -1,13 +1,15 @@
 module TidalHint where
 
+import           Control.Concurrent.MVar
 import           Control.Exception
+import           Control.Monad
+import           Data.List (intercalate,isPrefixOf)
 import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
 import           System.IO
 import           System.Posix.Signals
-import           Control.Concurrent.MVar
-import           Data.List (intercalate,isPrefixOf)
 import           Sound.Tidal.Utils
+
 import           Parameters
 
 data Response = HintOK {parsed :: ControlPattern}
@@ -82,11 +84,10 @@ parseError (NotAllowed s) = "NotAllowed error: " ++ s
 parseError (GhcException s) = "GHC Exception: " ++ s
 --parseError _ = "Strange error"
 
--- TODO: launch all the input scripts, not just the first
 initScripts :: [PScript] -> Interpreter ()
 initScripts scripts = do
-  result <- liftIO $ try (readFile (head scripts)) :: Interpreter (Either IOException String)
-  case result of
-    Left exc -> do liftIO $ hPutStrLn stderr ("Error loading script " ++ show exc)
-    -- TODO: how to catch runStmt errors?
-    Right script -> runStmt script
+  forM_ scripts $ \s -> do
+    result <- liftIO $ try (readFile s) :: Interpreter (Either IOException String)
+    case result of
+      Left exc -> liftIO $ hPutStrLn stderr ("Error loading script " ++ show exc)
+      Right script -> runStmt script -- TODO: how to catch runStmt errors?
