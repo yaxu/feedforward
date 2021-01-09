@@ -1,7 +1,6 @@
 module TidalHint where
 
 import           Control.Exception
-import           Control.Monad.Zip
 import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
 import           System.IO
@@ -45,11 +44,7 @@ hintJob (mIn, mOut) scripts =
   do result <- catch (do Hint.runInterpreter $ do
                            Hint.set [languageExtensions := [OverloadedStrings]]
                            Hint.setImportsQ (Prelude.map (\x -> (x, Nothing)) libs)
-                           -- TODO: how to catch readfile errors?
-                           liftIO $ hPutStrLn stderr ("pronto a leggere il file " ++ head scripts)
-                           source <- liftIO $ readFile (head scripts)
-                           liftIO $ hPutStrLn stderr ("file letto " ++ source)
-                           runStmt source
+                           initScripts scripts
                            hintLoop
                      )
                (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
@@ -86,3 +81,12 @@ parseError (WontCompile es) = "Compile error: " ++ (intercalate "\n" (Prelude.ma
 parseError (NotAllowed s) = "NotAllowed error: " ++ s
 parseError (GhcException s) = "GHC Exception: " ++ s
 --parseError _ = "Strange error"
+
+-- TODO: launch all the input scripts, not just the first
+initScripts :: [PScript] -> Interpreter ()
+initScripts scripts = do
+  result <- liftIO $ try (readFile (head scripts)) :: Interpreter (Either IOException String)
+  case result of
+    Left exc -> do liftIO $ hPutStrLn stderr ("Error loading script " ++ show exc)
+    -- TODO: how to catch runStmt errors?
+    Right script -> runStmt script
