@@ -6,7 +6,7 @@ newtype Parameters = Parameters {scripts :: [String]}
 
 parameters :: Parser Parameters
 parameters = Parameters
-      <$> some ( strOption
+      <$> many ( strOption
           ( long "scripts"
          <> short 's'
          <> metavar "FILE"
