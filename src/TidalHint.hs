@@ -1,6 +1,7 @@
 module TidalHint where
 
 import           Control.Exception
+import           Control.Monad.Zip
 import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
 import           System.IO
@@ -8,6 +9,7 @@ import           System.Posix.Signals
 import           Control.Concurrent.MVar
 import           Data.List (intercalate,isPrefixOf)
 import           Sound.Tidal.Utils
+import           Parameters
 
 data Response = HintOK {parsed :: ControlPattern}
               | HintError {errorMessage :: String}
@@ -38,18 +40,23 @@ hintControlPattern s = Hint.runInterpreter $ do
   Hint.interpret s (Hint.as :: ControlPattern)
 -}
 
-hintJob :: (MVar String, MVar Response) -> IO ()
-hintJob (mIn, mOut) =
+hintJob :: (MVar String, MVar Response) -> [PScript] -> IO ()
+hintJob (mIn, mOut) scripts =
   do result <- catch (do Hint.runInterpreter $ do
                            Hint.set [languageExtensions := [OverloadedStrings]]
                            Hint.setImportsQ (Prelude.map (\x -> (x, Nothing)) libs)
+                           -- TODO: how to catch readfile errors?
+                           liftIO $ hPutStrLn stderr ("pronto a leggere il file " ++ head scripts)
+                           source <- liftIO $ readFile (head scripts)
+                           liftIO $ hPutStrLn stderr ("file letto " ++ source)
+                           runStmt source
                            hintLoop
                      )
                (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
 
      takeMVar mIn
      putMVar mOut (toResponse result)
-     hintJob (mIn, mOut)
+     hintJob (mIn, mOut) scripts
      where hintLoop = do s <- liftIO (readMVar mIn)
                          let munged = deltaMini s
                          t <- Hint.typeChecksWithDetails munged

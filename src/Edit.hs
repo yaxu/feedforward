@@ -45,6 +45,7 @@ import           GHC.Generics
 
 import           Change
 import           Code
+import           Parameters
 import           TidalHint
 
 
@@ -100,6 +101,22 @@ topMargin    = 1 :: Integer
 bottomMargin = 2 :: Integer
 leftMargin   = 3 :: Integer
 rightMargin  = 0 :: Integer
+
+main :: IO ()
+main = do installHandler sigINT Ignore Nothing
+          installHandler sigTERM Ignore Nothing
+          installHandler sigPIPE Ignore Nothing
+          installHandler sigHUP Ignore Nothing
+          installHandler sigKILL Ignore Nothing
+          installHandler sigSTOP Ignore Nothing
+          installHandler sigTSTP Ignore Nothing
+          argv <- getArgs
+          runCurses $ do
+            mvS <- initEState (parseScripts argv)
+            liftIO $ forkIO $ listenRMS mvS
+            drawEditor mvS
+            render
+            mainLoop mvS
 
 sendTidal :: EState -> ControlPattern -> IO ()
 sendTidal s pat = do let pat' = if isJust (sNumber s)
@@ -346,8 +363,8 @@ connectCircle mvS name =
                                        return ()
                                 | otherwise = return ()
 
-initEState :: [String] -> Curses (MVar EState)
-initEState args
+initEState :: [PScript] -> Curses (MVar EState)
+initEState scripts
   = do w <- defaultWindow
        updateWindow w clear
        setEcho False
@@ -360,7 +377,7 @@ initEState args
        fileWindow <- newWindow 10 20 3 3
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
-       liftIO $ forkIO $ hintJob (mIn, mOut)
+       liftIO $ forkIO $ hintJob (mIn, mOut) scripts
        tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
                 (defaultConfig {cFrameTimespan = 1/20})
        logFH <- liftIO openLog
@@ -516,22 +533,6 @@ resolve :: [Char] -> [Char] -> IO N.AddrInfo
 resolve host port = do let hints = N.defaultHints { N.addrSocketType = N.Stream }
                        addr:_ <- N.getAddrInfo (Just hints) (Just host) (Just port)
                        return addr
-
-main :: IO ()
-main = do installHandler sigINT Ignore Nothing
-          installHandler sigTERM Ignore Nothing
-          installHandler sigPIPE Ignore Nothing
-          installHandler sigHUP Ignore Nothing
-          installHandler sigKILL Ignore Nothing
-          installHandler sigSTOP Ignore Nothing
-          installHandler sigTSTP Ignore Nothing
-          argv <- getArgs
-          runCurses $ do
-            mvS <- initEState argv
-            liftIO $ forkIO $ listenRMS mvS
-            drawEditor mvS
-            render
-            mainLoop mvS
 
 handleEv :: MVar EState -> Mode -> Maybe UI.NCurses.Event -> Curses Bool
 handleEv mvS PlaybackMode ev =
