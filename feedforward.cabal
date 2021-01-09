@@ -18,6 +18,7 @@ library
     , mtl
     , ncurses
     , network
+    , optparse-applicative
     , text
     , tidal >= 1.4.6
     , time
@@ -50,6 +51,7 @@ executable feedforward
     , mtl
     , ncurses
     , network
+    , optparse-applicative
     , text
     , tidal
     , time

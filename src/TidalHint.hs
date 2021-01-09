@@ -41,19 +41,19 @@ hintControlPattern s = Hint.runInterpreter $ do
   Hint.interpret s (Hint.as :: ControlPattern)
 -}
 
-hintJob :: (MVar String, MVar Response) -> [PScript] -> IO ()
-hintJob (mIn, mOut) scripts =
+hintJob :: (MVar String, MVar Response) -> Parameters -> IO ()
+hintJob (mIn, mOut) parameters =
   do result <- catch (do Hint.runInterpreter $ do
                            Hint.set [languageExtensions := [OverloadedStrings]]
                            Hint.setImportsQ (Prelude.map (\x -> (x, Nothing)) libs)
-                           initScripts scripts
+                           initScripts (scripts parameters)
                            hintLoop
                      )
                (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
 
      takeMVar mIn
      putMVar mOut (toResponse result)
-     hintJob (mIn, mOut) scripts
+     hintJob (mIn, mOut) parameters
      where hintLoop = do s <- liftIO (readMVar mIn)
                          let munged = deltaMini s
                          t <- Hint.typeChecksWithDetails munged
@@ -84,7 +84,7 @@ parseError (NotAllowed s) = "NotAllowed error: " ++ s
 parseError (GhcException s) = "GHC Exception: " ++ s
 --parseError _ = "Strange error"
 
-initScripts :: [PScript] -> Interpreter ()
+initScripts :: [String] -> Interpreter ()
 initScripts scripts = do
   forM_ scripts $ \s -> do
     result <- liftIO $ try (readFile s) :: Interpreter (Either IOException String)

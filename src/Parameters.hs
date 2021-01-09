@@ -1,9 +1,13 @@
 module Parameters where
 
--- TODO: better define a data Parameters containing all the parameters. maybe better use something live optparse-applicative
-type PScript = String
+import Options.Applicative
 
-parseScripts :: [String] -> [PScript]
-parseScripts [] = []
-parseScripts ("-s":v:xs) = v : parseScripts xs
-parseScripts (_:_:xs) = parseScripts xs
+newtype Parameters = Parameters {scripts :: [String]}
+
+parameters :: Parser Parameters
+parameters = Parameters
+      <$> some ( strOption
+          ( long "scripts"
+         <> short 's'
+         <> metavar "FILE"
+         <> help "Script file to be executed at start" ))
