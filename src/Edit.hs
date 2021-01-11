@@ -45,6 +45,7 @@ import           GHC.Generics
 
 import           Change
 import           Code
+import           Parameters
 import           TidalHint
 
 
@@ -100,6 +101,22 @@ topMargin    = 1 :: Integer
 bottomMargin = 2 :: Integer
 leftMargin   = 3 :: Integer
 rightMargin  = 0 :: Integer
+
+feedforward :: Parameters -> IO ()
+feedforward params = do
+  installHandler sigINT Ignore Nothing
+  installHandler sigTERM Ignore Nothing
+  installHandler sigPIPE Ignore Nothing
+  installHandler sigHUP Ignore Nothing
+  installHandler sigKILL Ignore Nothing
+  installHandler sigSTOP Ignore Nothing
+  installHandler sigTSTP Ignore Nothing
+  runCurses $ do
+    mvS <- initEState params
+    liftIO $ forkIO $ listenRMS mvS
+    drawEditor mvS
+    render
+    mainLoop mvS
 
 sendTidal :: EState -> ControlPattern -> IO ()
 sendTidal s pat = do let pat' = if isJust (sNumber s)
@@ -346,60 +363,60 @@ connectCircle mvS name =
                                        return ()
                                 | otherwise = return ()
 
-initEState :: [String] -> Curses (MVar EState)
-initEState args
-  = do w <- defaultWindow
-       updateWindow w clear
-       setEcho False
-       setKeypad w True
-       fg <- newColorID ColorWhite ColorBlue 1
-       black <- newColorID ColorWhite ColorDefault 2
-       bg <- newColorID ColorBlack ColorWhite 3
-       shade <- newColorID ColorBlack ColorBlue 4
-       warn <- newColorID ColorWhite ColorRed 5
-       fileWindow <- newWindow 10 20 3 3
-       mIn <- liftIO newEmptyMVar
-       mOut <- liftIO newEmptyMVar
-       liftIO $ forkIO $ hintJob (mIn, mOut)
-       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
-                (defaultConfig {cFrameTimespan = 1/20})
-       logFH <- liftIO openLog
-       name <- liftIO $ lookupEnv "CIRCLE_NAME"
-       number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
-       mvS <- liftIO $ newEmptyMVar
-       circle <- liftIO $ connectCircle mvS name
-       liftIO $ putMVar mvS $ EState {sCode = [Line Nothing ""],
-                                     sPos = (0,0),
-                                     sEditWindow = w,
-                                     sFileWindow = fileWindow,
-                                     sXWarp = 0,
-                                     sColour = fg,
-                                     sColourBlack = black,
-                                     sColourHilite = bg,
-                                     sColourShaded = shade,
-                                     sColourWarn = warn,
-                                     -- sHilite = (False, []),
-                                     sHintIn = mIn,
-                                     sHintOut = mOut,
-                                     sTidal = tidal,
-                                     sChangeSet = [],
-                                     sLogFH = logFH,
-                                     sRMS = replicate 20 0,
-                                     sScroll = (0,0),
-                                     sMode = EditMode,
-                                     sFileChoice = FileChoice {fcPath = [],
-                                                               fcIndex = 0,
-                                                               fcDirs = [],
-                                                               fcFiles = []
-                                                              },
-                                     sCircle = circle,
-                                     sPlayback = Nothing,
-                                     sName = name,
-                                     sNumber = join $ fmap readMaybe number,
-                                     sRefresh = False,
-                                     sLastAlt = 0
-                                    }
-       return mvS
+initEState :: Parameters -> Curses (MVar EState)
+initEState parameters =
+  do w <- defaultWindow
+     updateWindow w clear
+     setEcho False
+     setKeypad w True
+     fg <- newColorID ColorWhite ColorBlue 1
+     black <- newColorID ColorWhite ColorDefault 2
+     bg <- newColorID ColorBlack ColorWhite 3
+     shade <- newColorID ColorBlack ColorBlue 4
+     warn <- newColorID ColorWhite ColorRed 5
+     fileWindow <- newWindow 10 20 3 3
+     mIn <- liftIO newEmptyMVar
+     mOut <- liftIO newEmptyMVar
+     liftIO $ forkIO $ hintJob (mIn, mOut) parameters
+     tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
+              (defaultConfig {cFrameTimespan = 1/20})
+     logFH <- liftIO openLog
+     name <- liftIO $ lookupEnv "CIRCLE_NAME"
+     number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
+     mvS <- liftIO $ newEmptyMVar
+     circle <- liftIO $ connectCircle mvS name
+     liftIO $ putMVar mvS $ EState {sCode = [Line Nothing ""],
+                                   sPos = (0,0),
+                                   sEditWindow = w,
+                                   sFileWindow = fileWindow,
+                                   sXWarp = 0,
+                                   sColour = fg,
+                                   sColourBlack = black,
+                                   sColourHilite = bg,
+                                   sColourShaded = shade,
+                                   sColourWarn = warn,
+                                   -- sHilite = (False, []),
+                                   sHintIn = mIn,
+                                   sHintOut = mOut,
+                                   sTidal = tidal,
+                                   sChangeSet = [],
+                                   sLogFH = logFH,
+                                   sRMS = replicate 20 0,
+                                   sScroll = (0,0),
+                                   sMode = EditMode,
+                                   sFileChoice = FileChoice {fcPath = [],
+                                                             fcIndex = 0,
+                                                             fcDirs = [],
+                                                             fcFiles = []
+                                                            },
+                                   sCircle = circle,
+                                   sPlayback = Nothing,
+                                   sName = name,
+                                   sNumber = join $ fmap readMaybe number,
+                                   sRefresh = False,
+                                   sLastAlt = 0
+                                  }
+     return mvS
 
 moveHome :: MVar EState -> Curses ()
 moveHome mvS = do s <- liftIO (readMVar mvS)
@@ -516,22 +533,6 @@ resolve :: [Char] -> [Char] -> IO N.AddrInfo
 resolve host port = do let hints = N.defaultHints { N.addrSocketType = N.Stream }
                        addr:_ <- N.getAddrInfo (Just hints) (Just host) (Just port)
                        return addr
-
-main :: IO ()
-main = do installHandler sigINT Ignore Nothing
-          installHandler sigTERM Ignore Nothing
-          installHandler sigPIPE Ignore Nothing
-          installHandler sigHUP Ignore Nothing
-          installHandler sigKILL Ignore Nothing
-          installHandler sigSTOP Ignore Nothing
-          installHandler sigTSTP Ignore Nothing
-          argv <- getArgs
-          runCurses $ do
-            mvS <- initEState argv
-            liftIO $ forkIO $ listenRMS mvS
-            drawEditor mvS
-            render
-            mainLoop mvS
 
 handleEv :: MVar EState -> Mode -> Maybe UI.NCurses.Event -> Curses Bool
 handleEv mvS PlaybackMode ev =

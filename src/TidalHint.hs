@@ -1,13 +1,17 @@
 module TidalHint where
 
-import           Control.Exception
+import           Control.Concurrent.MVar
+import           Control.Exception (IOException, SomeException)
+import           Control.Monad
+import           Control.Monad.Catch
+import           Data.List (intercalate,isPrefixOf)
 import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
 import           System.IO
 import           System.Posix.Signals
-import           Control.Concurrent.MVar
-import           Data.List (intercalate,isPrefixOf)
 import           Sound.Tidal.Utils
+
+import           Parameters
 
 data Response = HintOK {parsed :: ControlPattern}
               | HintError {errorMessage :: String}
@@ -27,7 +31,7 @@ runJob job = do putStrLn $ "Parsing: " ++ job
 -}
 
 libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum",
-        "Sound.Tidal.Simple"
+        "Sound.Tidal.Simple", "Data.Map"
        ]
 
 {-
@@ -38,34 +42,19 @@ hintControlPattern s = Hint.runInterpreter $ do
   Hint.interpret s (Hint.as :: ControlPattern)
 -}
 
-hintJob  :: (MVar String, MVar Response) -> IO ()
-hintJob (mIn, mOut) =
-  do installHandler sigINT Ignore Nothing
-     installHandler sigTERM Ignore Nothing
-     installHandler sigPIPE Ignore Nothing
-     installHandler sigHUP Ignore Nothing
-     installHandler sigKILL Ignore Nothing
-     installHandler sigSTOP Ignore Nothing
-     result <- catch (do Hint.runInterpreter $ do
-                           _ <- liftIO $ installHandler sigINT Ignore Nothing
+hintJob :: (MVar String, MVar Response) -> Parameters -> IO ()
+hintJob (mIn, mOut) parameters =
+  do result <- catch (do Hint.runInterpreter $ do
                            Hint.set [languageExtensions := [OverloadedStrings]]
-                           --Hint.setImports libs
-                           Hint.setImportsQ $ (Prelude.map (\x -> (x, Nothing)) libs) ++ [("Data.Map", Nothing)]
+                           Hint.setImportsQ (Prelude.map (\x -> (x, Nothing)) libs)
+                           execScripts (scripts parameters)
                            hintLoop
                      )
                (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
-     let response = case result of
-          Left err -> HintError (parseError err)
-          Right p  -> HintOK p -- can happen
-         parseError (UnknownError s) = "Unknown error: " ++ s
-         parseError (WontCompile es) = "Compile error: " ++ (intercalate "\n" (Prelude.map errMsg es))
-         parseError (NotAllowed s) = "NotAllowed error: " ++ s
-         parseError (GhcException s) = "GHC Exception: " ++ s
-         --parseError _ = "Strange error"
 
      takeMVar mIn
-     putMVar mOut response
-     hintJob (mIn, mOut)
+     putMVar mOut (toResponse result)
+     hintJob (mIn, mOut) parameters
      where hintLoop = do s <- liftIO (readMVar mIn)
                          let munged = deltaMini s
                          t <- Hint.typeChecksWithDetails munged
@@ -84,3 +73,27 @@ hintJob (mIn, mOut) =
                 liftIO $ putMVar mOut $ HintOK p
                 liftIO $ takeMVar mIn
                 return ()
+
+execScripts :: [String] -> Interpreter ()
+execScripts paths = do
+  forM_ paths $ \path -> do
+    liftIO $ hPutStrLn stderr ("Loading script... " ++ path)
+    readResult <- liftIO $ try (readFile path) :: Interpreter (Either IOException String)
+    case readResult of
+      Left exc -> liftIO $ hPutStrLn stderr ("Error loading script " ++ show exc)
+      Right script -> do
+        execResult <- try (runStmt script) :: Interpreter (Either InterpreterError ())
+        case execResult of
+          Left exc -> liftIO $ hPutStrLn stderr $ parseError exc
+          Right () -> return ()
+
+toResponse :: Either InterpreterError ControlPattern -> Response
+toResponse (Left err) = HintError (parseError err)
+toResponse (Right p) = HintOK p
+
+parseError :: InterpreterError -> String
+parseError (UnknownError s) = "Unknown error: " ++ s
+parseError (WontCompile es) = "Compile error: " ++ (intercalate "\n" (Prelude.map errMsg es))
+parseError (NotAllowed s) = "NotAllowed error: " ++ s
+parseError (GhcException s) = "GHC Exception: " ++ s
+--parseError _ = "Strange error"
