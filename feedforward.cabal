@@ -15,6 +15,7 @@ executable feedforward
       aeson
     , base
     , directory
+    , exceptions
     , filepath
     , hint
     , hosc

@@ -1,8 +1,9 @@
 module TidalHint where
 
 import           Control.Concurrent.MVar
-import           Control.Exception
+import           Control.Exception (IOException, SomeException)
 import           Control.Monad
+import           Control.Monad.Catch
 import           Data.List (intercalate,isPrefixOf)
 import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
@@ -46,7 +47,7 @@ hintJob (mIn, mOut) parameters =
   do result <- catch (do Hint.runInterpreter $ do
                            Hint.set [languageExtensions := [OverloadedStrings]]
                            Hint.setImportsQ (Prelude.map (\x -> (x, Nothing)) libs)
-                           initScripts (scripts parameters)
+                           execScripts (scripts parameters)
                            hintLoop
                      )
                (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
@@ -73,6 +74,19 @@ hintJob (mIn, mOut) parameters =
                 liftIO $ takeMVar mIn
                 return ()
 
+execScripts :: [String] -> Interpreter ()
+execScripts paths = do
+  forM_ paths $ \path -> do
+    liftIO $ hPutStrLn stderr ("Loading script... " ++ path)
+    readResult <- liftIO $ try (readFile path) :: Interpreter (Either IOException String)
+    case readResult of
+      Left exc -> liftIO $ hPutStrLn stderr ("Error loading script " ++ show exc)
+      Right script -> do
+        execResult <- try (runStmt script) :: Interpreter (Either InterpreterError ())
+        case execResult of
+          Left exc -> liftIO $ hPutStrLn stderr $ parseError exc
+          Right () -> return ()
+
 toResponse :: Either InterpreterError ControlPattern -> Response
 toResponse (Left err) = HintError (parseError err)
 toResponse (Right p) = HintOK p
@@ -83,11 +97,3 @@ parseError (WontCompile es) = "Compile error: " ++ (intercalate "\n" (Prelude.ma
 parseError (NotAllowed s) = "NotAllowed error: " ++ s
 parseError (GhcException s) = "GHC Exception: " ++ s
 --parseError _ = "Strange error"
-
-initScripts :: [String] -> Interpreter ()
-initScripts scripts = do
-  forM_ scripts $ \s -> do
-    result <- liftIO $ try (readFile s) :: Interpreter (Either IOException String)
-    case result of
-      Left exc -> liftIO $ hPutStrLn stderr ("Error loading script " ++ show exc)
-      Right script -> runStmt script -- TODO: how to catch runStmt errors?
