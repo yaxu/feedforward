@@ -77,7 +77,9 @@ hintJob (mIn, mOut) parameters =
                   Left exc -> liftIO $ do
                     hPutStrLn stderr $ parseError exc
                     putMVar mOut $ HintError (parseError exc)
-                  Right pat -> liftIO $ putMVar mOut $ HintOK pat
+                  Right pat -> liftIO $ do
+                    hPutStrLn stderr $ show pat
+                    putMVar mOut $ HintOK pat
 
                 liftIO $ takeMVar mIn
                 return ()
