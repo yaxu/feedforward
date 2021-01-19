@@ -78,7 +78,7 @@ hintJob (mIn, mOut) parameters =
                     hPutStrLn stderr $ parseError exc
                     putMVar mOut $ HintError (parseError exc)
                   Right pat -> liftIO $ do
-                    hPutStrLn stderr $ show pat
+                    hPutStrLn stderr $ "Eval"
                     putMVar mOut $ HintOK pat
 
                 liftIO $ takeMVar mIn
