@@ -75,7 +75,7 @@ data Playback = Playback {pbOffset  :: Double,
                           --pbHushTime :: Double
                          }
 
-channels = 8
+channels = 2
 latency = 0.2
 
 dirt = Super
@@ -478,7 +478,7 @@ initEState args
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut)
        tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
-                (defaultConfig {cFrameTimespan = 1/20})
+                (defaultConfig {cFrameTimespan = 1/20, cVerbose = False})
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
