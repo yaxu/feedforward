@@ -30,9 +30,13 @@ runJob job = do putStrLn $ "Parsing: " ++ job
                 return response
 -}
 
-libs = ["Prelude","Sound.Tidal.Context","Sound.OSC.Datum",
-        "Sound.Tidal.Simple", "Data.Map"
-       ]
+imports = [
+  ModuleImport "Data.Map" NotQualified (ImportList ["Map"]),
+  ModuleImport "Prelude" NotQualified NoImportList,
+  ModuleImport "Sound.OSC.Datum" NotQualified NoImportList,
+  ModuleImport "Sound.Tidal.Context" NotQualified NoImportList,
+  ModuleImport "Sound.Tidal.Simple" NotQualified NoImportList
+  ]
 
 {-
 hintControlPattern  :: String -> IO (Either InterpreterError ControlPattern)
@@ -46,7 +50,7 @@ hintJob :: (MVar String, MVar Response) -> Parameters -> IO ()
 hintJob (mIn, mOut) parameters =
   do result <- catch (do Hint.runInterpreter $ do
                            Hint.set [languageExtensions := [OverloadedStrings]]
-                           Hint.setImportsQ (Prelude.map (\x -> (x, Nothing)) libs)
+                           Hint.setImportsF imports
                            execScripts (scripts parameters)
                            hintLoop
                      )
@@ -67,10 +71,16 @@ hintJob (mIn, mOut) parameters =
                                                    takeMVar mIn
                                        return ()
            interp (Right t) s =
-             do -- liftIO $ hPutStrLn stderr $ "type: " ++ t
-                p <- Hint.interpret s (Hint.as :: ControlPattern)
-                -- liftIO $ hPutStrLn stderr $ "first arc: " ++ (show p)
-                liftIO $ putMVar mOut $ HintOK p
+             do
+                p <- try (Hint.interpret s (Hint.as :: ControlPattern)) :: Interpreter (Either InterpreterError ControlPattern)
+                case p of
+                  Left exc -> liftIO $ do
+                    hPutStrLn stderr $ parseError exc
+                    putMVar mOut $ HintError (parseError exc)
+                  Right pat -> liftIO $ do
+                    hPutStrLn stderr $ "Eval"
+                    putMVar mOut $ HintOK pat
+
                 liftIO $ takeMVar mIn
                 return ()
 
