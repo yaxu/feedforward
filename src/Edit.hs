@@ -27,7 +27,7 @@ import           Data.Time.Format
 import qualified Network.Socket          as N
 import qualified Network.WebSockets      as WS
 import           Sound.OSC.FD
-import           Sound.Tidal.Context     hiding (when)
+import           Sound.Tidal.Context     hiding (when, resolve)
 import           Sound.Tidal.Tempo       (timeToCycles)
 import           System.Directory
 import           System.Environment      (getArgs, lookupEnv)
