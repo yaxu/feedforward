@@ -53,9 +53,12 @@ data Dirt = Classic | Super
           deriving Eq
 
 data Playback = Playback {pbOffset  :: Double,
-                          pbChanges :: [Change],
-                          pbHushTime :: Double
+                          pbChanges :: [Change]
+                          --pbHushTime :: Double
                          }
+
+channels = 2
+
 latency = 0.2
 
 dirt = Super
@@ -294,9 +297,8 @@ drawEditor mvS
                                                drawString "  "
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
-                                              rmsL = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*2))
-                                              rmsR = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*2+1))
-                                              str = (rmsBlocks !! rmsL):(rmsBlocks !! rmsR):[]
+                                              str = map (\n -> rmsBlocks !! (rmsn n)) [0 .. channels-1]
+                                              rmsn n = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*channels+n))
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
                                           drawString $ str
@@ -364,59 +366,69 @@ connectCircle mvS name =
                                 | otherwise = return ()
 
 initEState :: Parameters -> Curses (MVar EState)
-initEState parameters =
-  do w <- defaultWindow
-     updateWindow w clear
-     setEcho False
-     setKeypad w True
-     fg <- newColorID ColorWhite ColorBlue 1
-     black <- newColorID ColorWhite ColorDefault 2
-     bg <- newColorID ColorBlack ColorWhite 3
-     shade <- newColorID ColorBlack ColorBlue 4
-     warn <- newColorID ColorWhite ColorRed 5
-     fileWindow <- newWindow 10 20 3 3
-     mIn <- liftIO newEmptyMVar
-     mOut <- liftIO newEmptyMVar
-     liftIO $ forkIO $ hintJob (mIn, mOut) parameters
-     tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
-              (defaultConfig {cFrameTimespan = 1/20})
-     logFH <- liftIO openLog
-     name <- liftIO $ lookupEnv "CIRCLE_NAME"
-     number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
-     mvS <- liftIO $ newEmptyMVar
-     circle <- liftIO $ connectCircle mvS name
-     liftIO $ putMVar mvS $ EState {sCode = [Line Nothing ""],
-                                   sPos = (0,0),
-                                   sEditWindow = w,
-                                   sFileWindow = fileWindow,
-                                   sXWarp = 0,
-                                   sColour = fg,
-                                   sColourBlack = black,
-                                   sColourHilite = bg,
-                                   sColourShaded = shade,
-                                   sColourWarn = warn,
-                                   -- sHilite = (False, []),
-                                   sHintIn = mIn,
-                                   sHintOut = mOut,
-                                   sTidal = tidal,
-                                   sChangeSet = [],
-                                   sLogFH = logFH,
-                                   sRMS = replicate 20 0,
-                                   sScroll = (0,0),
-                                   sMode = EditMode,
-                                   sFileChoice = FileChoice {fcPath = [],
-                                                             fcIndex = 0,
-                                                             fcDirs = [],
-                                                             fcFiles = []
-                                                            },
-                                   sCircle = circle,
-                                   sPlayback = Nothing,
-                                   sName = name,
-                                   sNumber = join $ fmap readMaybe number,
-                                   sRefresh = False,
-                                   sLastAlt = 0
-                                  }
-     return mvS
+initEState parameters
+  = do w <- defaultWindow
+       updateWindow w clear
+       setEcho False
+       setKeypad w True
+       fg <- newColorID ColorWhite ColorBlue 1
+       black <- newColorID ColorWhite ColorDefault 2
+       bg <- newColorID ColorBlack ColorWhite 3
+       shade <- newColorID ColorBlack ColorBlue 4
+       warn <- newColorID ColorWhite ColorRed 5
+       fileWindow <- newWindow 10 20 3 3
+       mIn <- liftIO newEmptyMVar
+       mOut <- liftIO newEmptyMVar
+       liftIO $ forkIO $ hintJob (mIn, mOut) parameters
+       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
+                (defaultConfig {cFrameTimespan = 1/20, cVerbose = False})
+       logFH <- liftIO openLog
+       name <- liftIO $ lookupEnv "CIRCLE_NAME"
+       number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
+       mvS <- liftIO $ newEmptyMVar
+       circle <- liftIO $ connectCircle mvS name
+       liftIO $ putMVar mvS $ EState {sCode = [Line Nothing ""],
+                                     sPos = (0,0),
+                                     sEditWindow = w,
+                                     sFileWindow = fileWindow,
+                                     sXWarp = 0,
+                                     sColour = fg,
+                                     sColourBlack = black,
+                                     sColourHilite = bg,
+                                     sColourShaded = shade,
+                                     sColourWarn = warn,
+                                     -- sHilite = (False, []),
+                                     sHintIn = mIn,
+                                     sHintOut = mOut,
+                                     sTidal = tidal,
+                                     sChangeSet = [],
+                                     sLogFH = logFH,
+                                     sRMS = replicate (10*channels) 0,
+                                     sScroll = (0,0),
+                                     sMode = EditMode,
+                                     sFileChoice = FileChoice {fcPath = [],
+                                                               fcIndex = 0,
+                                                               fcDirs = [],
+                                                               fcFiles = []
+                                                              },
+                                     sCircle = circle,
+                                     sPlayback = Nothing,
+                                     sName = name,
+                                     sNumber = join $ fmap readMaybe number,
+                                     sRefresh = False,
+                                     sLastAlt = 0
+                                    }
+       -- hack to load a json file from a session folder
+       when (isJust $ history parameters) $
+         do let session_file = fromJust $ history parameters
+                offset = (read (args !! 1)) :: Double
+            liftIO $ do
+              putStrLn $ "Loading " ++ session_file
+              delAll mvS
+              s <- takeMVar mvS
+              s' <- startPlayback s offset session_file
+              putMVar mvS s'
+       return mvS
 
 moveHome :: MVar EState -> Curses ()
 moveHome mvS = do s <- liftIO (readMVar mvS)
@@ -515,10 +527,11 @@ listenRMS mvS = do let port = case dirt of
       do s <- takeMVar mvS
          mungeOrbit <- mungeOrbitIO
          let orbit = mungeOrbit $ fromMaybe 0 $ datum_integral $ messageDatum m !! 1
-             l = fromMaybe 0 $ datum_floating $ messageDatum m !! 3
-             r = fromMaybe 0 $ datum_floating $ messageDatum m !! 5
+             chanrms = map (\n -> fromMaybe 0 $ datum_floating $
+                             messageDatum m !! ((n*2) + 3)
+                           ) [0 .. channels - 1]
              rms = sRMS s
-             rms' = take (orbit*2) rms ++ [l,r] ++ drop ((orbit*2)+2) rms
+             rms' = take (orbit*channels) rms ++ chanrms ++ drop ((orbit+1)*(channels)) rms
          putMVar mvS $ s {sRMS = rms'}
     act _ = return ()
     subscribe udp | dirt == Super =
@@ -667,15 +680,18 @@ mainLoop mvS = loop where
 updateScreen :: MVar EState -> Mode -> Curses ()
 updateScreen mvS PlaybackMode
   = do s <- liftIO $ takeMVar mvS
-       let (Playback offset cs hushTime) = fromJust $ sPlayback s
+       let (Playback offset cs {-hushTime-}) = fromJust $ sPlayback s
        now <- liftIO $ (realToFrac <$> getPOSIXTime)
        -- let cs' = filterPre cs offset
        --liftIO $ hPutStrLn stderr $ "offset: " ++ show (offset)
        --liftIO $ hPutStrLn stderr $ "pre: " ++ show (length cs)
        --liftIO $ hPutStrLn stderr $ "post: " ++ show (length cs')
+       -- liftIO $ hPutStrLn stderr $ "cwhen: " ++ (show $ cWhen $ head cs)
+
+       -- liftIO $ hPutStrLn stderr $ "t: " ++ (show $ now - offset)
        let (ready, waiting) = takeReady cs (now - offset)
        s' <- liftIO $ foldM applyChange s ready
-       liftIO $ if now >= hushTime
+       {-liftIO $ if now >= hushTime
                 then do hPutStrLn stderr ("hush! " ++ show hushTime)
                         (sendTidal s) silence
                         putMVar mvS (s' {sPlayback = Nothing,
@@ -686,7 +702,8 @@ updateScreen mvS PlaybackMode
                                          sMode = EditMode
                                         }
                                     )
-                else putMVar mvS (s' {sPlayback = Just $ Playback offset waiting hushTime})
+                else -}
+       liftIO $ putMVar mvS (s' {sPlayback = Just $ Playback offset waiting {-hushTime-}})
        return ()
          where takeReady cs t = (takeWhile (\c -> (cWhen c) < t) cs,
                                  dropWhile (\c -> (cWhen c) < t) cs
@@ -1001,26 +1018,26 @@ startPlayback :: EState -> Double -> FilePath -> IO EState
 startPlayback s offset path =
   do now <- (realToFrac <$> getPOSIXTime)
      -- hPutStrLn stderr $ show $ logDirectory </> path
-     fh <- openFile (logDirectory </> path) ReadMode
+     fh <- openFile (path) ReadMode
      c <- hGetContents fh
      let ls = lines c
-         ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
-         hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
+         -- ffwdTo = (read (fromJust $ stripPrefix "// " (ls !! 0))) :: Double
+         -- hushDelta = (read (fromJust $ stripPrefix "// " (ls !! 1))) :: Double
          changes = mapMaybe (A.decode . encodeUtf8 . T.pack) ls
-         changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
-         offset' = (now - ffwdTo) + offset
-         hushTime = now + hushDelta
-         playback = Playback {pbChanges = changes',
-                              pbOffset = offset',
-                              pbHushTime = hushTime
+         ffwdTo = cWhen $ head changes
+         -- changes' = filterPre ffwdTo (ffwdTo + hushDelta) changes
+         -- offset' = (now - ffwdTo) + offset
+         --hushTime = now + hushDelta
+         playback = Playback {pbChanges = changes,
+                              pbOffset = (now - ffwdTo) + offset
+                              {- pbHushTime = hushTime -}
                              }
      hPutStrLn stderr $ "offset: " ++ show offset
-     hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
-     hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
-     hPutStrLn stderr $ "now: " ++ show ffwdTo
-     hPutStrLn stderr $ "offset': " ++ show offset'
+     -- hPutStrLn stderr $ "ffwdTo: " ++ show ffwdTo
+     -- hPutStrLn stderr $ "hushTime: " ++ show hushTime ++ " (" ++ (show (hushTime - now)) ++ ")"
+     hPutStrLn stderr $ "now: " ++ show now
      hPutStrLn stderr $ "changes: " ++ show (length changes)
-     hPutStrLn stderr $ "changes': " ++ show (length changes')
+     -- hPutStrLn stderr $ "changes': " ++ show (length changes')
      return $ s {sPlayback = Just playback,
                  sMode = PlaybackMode,
                  sRefresh = True
