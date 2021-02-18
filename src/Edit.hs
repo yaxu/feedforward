@@ -419,9 +419,9 @@ initEState parameters
                                      sLastAlt = 0
                                     }
        -- hack to load a json file from a session folder
-       when (isJust $ history parameters) $
-         do let session_file = fromJust $ history parameters
-                offset = (read (args !! 1)) :: Double
+       when (isJust $ historyFile parameters) $
+         do let session_file = fromJust $ historyFile parameters
+                offset = fromMaybe 0 (historyOffset parameters)
             liftIO $ do
               putStrLn $ "Loading " ++ session_file
               delAll mvS
