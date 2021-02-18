@@ -13,9 +13,9 @@ parameters = Parameters
                    <> help "Script file to be executed at start"
                  )
                )
-      <*> (optional $ strOption $ long "historyFile"
+      <*> (optional $ strOption $ long "history-file"
             <> help "History file for replay"
           )
-      <*> (optional $ option auto $ long "historyOffset"
+      <*> (optional $ option auto $ long "history-offset"
             <> help "Time offset for history replay"
           )
