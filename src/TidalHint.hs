@@ -20,30 +20,12 @@ instance Show Response where
   show (HintOK p)    = "Ok: " ++ show p
   show (HintError s) = "Error: " ++ s
 
-{-
-runJob :: String -> IO (Response)
-runJob job = do putStrLn $ "Parsing: " ++ job
-                result <- hintControlPattern job
-                let response = case result of
-                      Left err -> Error (show err)
-                      Right p -> OK p
-                return response
--}
-
 imports = [
   ModuleImport "Data.Map" NotQualified (ImportList ["Map"]),
   ModuleImport "Prelude" NotQualified NoImportList,
   ModuleImport "Sound.Tidal.Context" NotQualified NoImportList,
   ModuleImport "Sound.Tidal.Simple" NotQualified NoImportList
   ]
-
-{-
-hintControlPattern  :: String -> IO (Either InterpreterError ControlPattern)
-hintControlPattern s = Hint.runInterpreter $ do
-  Hint.set [languageExtensions := [OverloadedStrings]]
-  Hint.setImports libs
-  Hint.interpret s (Hint.as :: ControlPattern)
--}
 
 hintJob :: (MVar String, MVar Response) -> Parameters -> IO ()
 hintJob (mIn, mOut) parameters =
@@ -77,7 +59,7 @@ hintJob (mIn, mOut) parameters =
                     hPutStrLn stderr $ parseError exc
                     putMVar mOut $ HintError (parseError exc)
                   Right pat -> liftIO $ do
-                    hPutStrLn stderr $ "Eval"
+                    hPutStrLn stderr "Eval"
                     putMVar mOut $ HintOK pat
 
                 liftIO $ takeMVar mIn
@@ -105,4 +87,3 @@ parseError (UnknownError s) = "Unknown error: " ++ s
 parseError (WontCompile es) = "Compile error: " ++ (intercalate "\n" (Prelude.map errMsg es))
 parseError (NotAllowed s) = "NotAllowed error: " ++ s
 parseError (GhcException s) = "GHC Exception: " ++ s
---parseError _ = "Strange error"
