@@ -33,7 +33,6 @@ runJob job = do putStrLn $ "Parsing: " ++ job
 imports = [
   ModuleImport "Data.Map" NotQualified (ImportList ["Map"]),
   ModuleImport "Prelude" NotQualified NoImportList,
-  ModuleImport "Sound.OSC.Datum" NotQualified NoImportList,
   ModuleImport "Sound.Tidal.Context" NotQualified NoImportList,
   ModuleImport "Sound.Tidal.Simple" NotQualified NoImportList
   ]
