@@ -24,13 +24,14 @@ executable feedforward
     , network
     , optparse-applicative
     , text
-    , tidal >= 1.7.1
+    , tidal >= 1.7.2
     , time
     , unix
     , websockets
     , transformers 
   other-modules:
       Change
+      Parameters
       -- Client
       Edit
       -- Server
