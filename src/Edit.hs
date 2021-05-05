@@ -75,7 +75,7 @@ data Playback = Playback {pbOffset  :: Double,
                           --pbHushTime :: Double
                          }
 
-channels = 8
+channels = 2
 latency = 0.2
 
 dirt = Super
@@ -337,12 +337,12 @@ drawEditor mvS
          setColor (sColour s')
          let ls = zip (sCode s) [0 ..]
          mapM_ (drawLine s w c events) $ zip [topMargin..] $ take (fromIntegral $ h - (topMargin + bottomMargin)) $ drop (fst $ sScroll s') $ ls
-         -- HACK: clear trailing line in case one has been deleted
-         -- assumes only one line ever deleted at a time (true so far)
+         -- HACK: clear trailing lines in case one (or more) has been deleted
          setColor (sColourBlack s')
          when (length ls < (fromIntegral $ h - (bottomMargin + topMargin))) $
-           do moveCursor (1 + (fromIntegral $ length ls)) 0
-              drawString $ take (fromIntegral w) $ repeat ' '
+           do mapM_ (\n -> do moveCursor (n + (fromIntegral $ length ls)) 0
+                              drawString $ take (fromIntegral w) $ repeat ' '
+                    ) [ 1 .. fromIntegral $ h - (((fromIntegral $ length ls) + topMargin)) - 1]
          return s'
        -- drawFooter s''
        updateWindow (sEditWindow s) $ goCursor s''
@@ -395,7 +395,7 @@ drawEditor mvS
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
                                               str = map (\n -> rmsBlocks !! (rmsn n)) [0 .. channels-1]
-                                              rmsn n = min rmsMax $ floor $ 150 * ((sRMS s) !! (id*channels+n))
+                                              rmsn n = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*channels+n))
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
                                           drawString $ str
@@ -479,6 +479,7 @@ initEState args
        liftIO $ forkIO $ hintJob (mIn, mOut)
        tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
                 (defaultConfig {cFrameTimespan = 1/20})
+       -- liftIO $ streamOnce tidal $ cps 1.05
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
