@@ -18,12 +18,13 @@ an operation, before the DOM updates happen.
 -}
 
 type Pos = (Int, Int)
+data Origin = Input | Delete deriving (Show, Eq, Generic)
 
 data Change = Change {cFrom    :: Pos,
                       cTo      :: Pos,
                       cText    :: [String],
                       cRemoved :: [String],
-                      cOrigin  :: String,
+                      cOrigin  :: Origin,
                       cWhen    :: Double,
                       cNewPos  :: Pos
                      }
@@ -47,7 +48,35 @@ data Change = Change {cFrom    :: Pos,
                        }
             deriving (Show, Generic)
 
+instance A.ToJSON Origin
+instance A.FromJSON Origin
 instance A.ToJSON Change
 instance A.FromJSON Change
 
 type ChangeSet = [Change]
+
+evalChange :: Change
+evalChange = Eval {cWhen = -1, cAll = True}
+
+insertChange :: Pos -> [String] -> Change
+insertChange (y,x) str = Change {cFrom = (y,x),
+                                 cTo = (y,x),
+                                 cText = str,
+                                 cRemoved = [""],
+                                 cOrigin = Input,
+                                 cWhen = -1,
+                                 cNewPos = (y',x')
+                                }
+  where y' = y + length str - 1
+        x' | length str == 1 = x + (length $ head str)
+           | otherwise = length $ last str
+
+deleteChange :: Pos -> Pos -> [String] -> Change
+deleteChange from to removed = Change {cFrom = from,
+                                       cTo = to,
+                                       cText = [""],
+                                       cRemoved = removed,
+                                       cOrigin = Delete,
+                                       cWhen = -1,
+                                       cNewPos = from
+                                      }
