@@ -4,7 +4,7 @@ Released under the terms of the GNU Public Licence version 3
 
 https://github.com/yaxu/feedforward
 
-https://www.youtube.com/watch?v=hkgKuD6Yvog
+<iframe width="560" height="315" src="https://www.youtube.com/embed/hkgKuD6Yvog" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 ## Installation
 
