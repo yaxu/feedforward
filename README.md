@@ -1,8 +1,10 @@
 Feedforward, an experimental editor for TidalCycles
-(c) Alex McLean 2018
+(c) Alex McLean 2021
 Released under the terms of the GNU Public Licence version 3
 
 https://github.com/yaxu/feedforward
+
+https://www.youtube.com/watch?v=hkgKuD6Yvog
 
 ## Installation
 
