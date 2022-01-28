@@ -382,8 +382,26 @@ initEState parameters
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut) parameters
        tempoIp <- liftIO $ fromMaybe "127.0.0.1" <$> lookupEnv "TEMPO_IP"
-       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
-                (defaultConfig {cCtrlAddr = "0.0.0.0", cTempoAddr = tempoIp, cFrameTimespan = 1/20, cVerbose = False})
+
+       ctrlTarget :: Target
+       ctrlTarget = Target {oName = "Ctrl",
+                            oAddress = "192.168.0.255",
+                            oPort = 6010,
+                            oBusPort = Nothing,
+                            oLatency = 0,
+                            oWindow = Nothing,
+                            oSchedule = Live,
+                            oHandshake = False
+                           }
+       ctrlShape :: OSC
+       ctrlShape = OSC "/ctrl" $ ArgList [("name", required),
+                                          ("val", sDefault "")
+                                         ]
+
+       c = defaultConfig {cCtrlAddr = "0.0.0.0", cTempoAddr = tempoIp, cFrameTimespan = 1/20, cVerbose = False}
+       sd = superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120}
+       tidal <- startStream c [(sd, [superdirtShape]), (ctrlTarget, [ctrlShape])]
+       
        -- liftIO $ streamOnce tidal $ cps 1.05
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
