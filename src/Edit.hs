@@ -381,8 +381,9 @@ initEState parameters
        mIn <- liftIO newEmptyMVar
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut) parameters
+       tempoIp <- liftIO $ fromMaybe "127.0.0.1" <$> lookupEnv "TEMPO_IP"
        tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
-                (defaultConfig {cFrameTimespan = 1/20, cVerbose = False})
+                (defaultConfig {cCtrlAddr = "0.0.0.0", cTempoAddr = tempoIp, cFrameTimespan = 1/20, cVerbose = False})
        -- liftIO $ streamOnce tidal $ cps 1.05
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
