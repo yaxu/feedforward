@@ -26,7 +26,8 @@ import           Data.Time.Clock.POSIX
 import           Data.Time.Format
 import qualified Network.Socket          as N
 import qualified Network.WebSockets      as WS
-import           Sound.OSC.FD
+import           Sound.Osc.Fd            as O
+import qualified Sound.Osc.Time.Timeout  as O
 import           Sound.Tidal.Context     hiding (when, resolve)
 import           Sound.Tidal.Tempo       (timeToCycles)
 import           System.Directory
@@ -230,10 +231,14 @@ rmsBlocks = " ▁▂▃▄▅▆▇█"
 drawEditor :: MVar EState -> Curses ()
 drawEditor mvS
   = do s <- liftIO $ takeMVar mvS
-       tempo <- liftIO $ readMVar $ sTempoMV $ sTidal s
-       t <- liftIO time
-       let c = timeToCycles tempo (t-latency)
-           events = codeEvents c $ sCode s
+       -- tempo <- liftIO $ readMVar $ sTempoMV $ sTidal s
+       -- t <- liftIO time
+       -- let c = timeToCycles tempo (t-latency)
+       c <- toRational <$> (liftIO $ streamGetnow (sTidal s))
+       events <- liftIO $ E.catch (do let evs = codeEvents c $ sCode s
+                                      hPutStrLn stderr $ show $ length evs
+                                      return evs
+                                  ) (\(e :: E.SomeException) -> return [])
        s'' <- updateWindow (sEditWindow s) $ do
          when (sRefresh s) clear
          (h,w) <- windowSize
@@ -269,7 +274,6 @@ drawEditor mvS
                                             b = x' - (fromIntegral scrollX)
                  lineEvents y = map (\(_, x, x') -> (fromIntegral x, fromIntegral x')) $ filter (\(y', _, _) -> y == (fromIntegral (y'-1))) events
              mapM drawEvent $ lineEvents n
-
              when (scrollX > 0) $
                do moveCursor y leftMargin
                   drawString "<"
@@ -382,9 +386,10 @@ initEState parameters
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut) parameters
        tempoIp <- liftIO $ fromMaybe "127.0.0.1" <$> lookupEnv "TEMPO_IP"
-       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0.2, oAddress = "127.0.0.1", oPort = 57120})
+       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0, oAddress = "127.0.0.1", oPort = 57120})
                 (defaultConfig {cCtrlAddr = "0.0.0.0", cTempoAddr = tempoIp, cFrameTimespan = 1/20, cVerbose = False})
        -- liftIO $ streamOnce tidal $ cps 1.05
+       -- sock <- liftIO $ carabiner tidal 4 0
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
@@ -739,6 +744,8 @@ keyCtrl mvS 'h' = stopAll mvS
 
 keyCtrl mvS 'l' = liftIO $ modifyMVar_ mvS $ \s -> return $ s {sRefresh = True}
 
+keyCtrl mvS '.' = stopAll mvS
+
 keyCtrl mvS _ = return ()
 
 keyAlt mvS '\n' = eval mvS
@@ -984,8 +991,8 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
-          -- where p' = p # orbit (pure o)
-          where p' = filt id $ p # orbit (pure o)
+          where p' = p # orbit (pure o)
+          -- where p' = filt id $ p # orbit (pure o)
         act _ _ (HintError err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps
