@@ -23,8 +23,7 @@ instance Show Response where
 imports = [
   ModuleImport "Data.Map" NotQualified (ImportList ["Map"]),
   ModuleImport "Prelude" NotQualified NoImportList,
-  ModuleImport "Sound.Tidal.Context" NotQualified NoImportList,
-  ModuleImport "Sound.Tidal.Simple" NotQualified NoImportList
+  ModuleImport "Sound.Tidal.Context" NotQualified NoImportList
   ]
 
 hintJob :: (MVar String, MVar Response) -> Parameters -> IO ()
@@ -42,8 +41,8 @@ hintJob (mIn, mOut) parameters =
      hintJob (mIn, mOut) parameters
      where hintLoop = do s <- liftIO (readMVar mIn)
                          let munged = deltaMini s
-                         t <- Hint.typeChecksWithDetails munged
                          -- liftIO $ hPutStrLn stderr $ "munged: " ++ munged
+                         t <- Hint.typeChecksWithDetails munged
                          --interp check s
                          interp t munged
                          hintLoop
@@ -53,6 +52,7 @@ hintJob (mIn, mOut) parameters =
                                        return ()
            interp (Right t) s =
              do
+                -- liftIO $ hPutStrLn stderr $ "Parsing: " ++ s
                 p <- try (Hint.interpret s (Hint.as :: ControlSignal)) :: Interpreter (Either InterpreterError ControlSignal)
                 case p of
                   Left exc -> liftIO $ do
