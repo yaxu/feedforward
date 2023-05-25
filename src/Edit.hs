@@ -64,7 +64,7 @@ data Playback = Playback {pbOffset  :: Double,
 
 channels = 2
 
-latency = 0.2
+latency = 0
 
 dirt = Super
 
@@ -237,7 +237,7 @@ drawEditor mvS
        -- tempo <- liftIO $ readMVar $ sTempoMV $ sTidal s
        -- t <- liftIO time
        -- let c = timeToCycles tempo (t-latency)
-       c <- toRational <$> (liftIO $ streamGetnow (sTidal s))
+       c <- (toRational) <$> (liftIO $ streamGetnow (sTidal s))
        events <- liftIO $ E.catch (do let evs = codeEvents c $ sCode s
                                       hPutStrLn stderr $ show $ length evs
                                       return evs
@@ -389,10 +389,32 @@ initEState parameters
        mOut <- liftIO newEmptyMVar
        liftIO $ forkIO $ hintJob (mIn, mOut) parameters
        tempoIp <- liftIO $ fromMaybe "127.0.0.1" <$> lookupEnv "TEMPO_IP"
-       tidal <- liftIO $ startTidal (superdirtTarget {oLatency = 0, oAddress = "127.0.0.1", oPort = 57120})
-                (defaultConfig {cCtrlAddr = "0.0.0.0", cTempoAddr = tempoIp, cFrameTimespan = 1/20, cVerbose = False})
-       -- liftIO $ streamOnce tidal $ cps 1.05
-       -- sock <- liftIO $ carabiner tidal 4 0
+
+       let spattarget = Target {oName = "spat",
+                                oAddress = "192.168.1.90",
+                                oPort = 2222,
+                                oLatency = 0.05,
+                                oWindow = Nothing,
+                                oSchedule = Live,
+                                oHandshake = False,
+                                oBusPort = Just 57110
+                               }
+           spatformats = [OSC "/source/{sorbit}/mute"  $ ArgList [("mute", Nothing)],
+                          OSC "/source/{sorbit}/aed"   $ ArgList [("a", Nothing), ("e", Nothing), ("d", Nothing)],
+                          OSC "/source/{sorbit}/xyz"   $ ArgList [("x", Nothing), ("y", Nothing), ("z", Nothing)],
+                          OSC "/source/{sorbit}/spread"   $ ArgList [("spread", Nothing)],
+                          OSC "/source/{sorbit}/doppler"   $ ArgList [("doppler", Nothing)],
+                          OSC "/source/{sorbit}/pres"   $ ArgList [("pres", Nothing)],
+                          OSC "/room/{sorbit}/heaviness" $ ArgList [("heaviness", Nothing)],
+                          OSC "/source/{sorbit}/yaw"   $ ArgList [("yaw", Nothing)]
+                         ]
+           oscmap = [(spattarget, spatformats),
+                     (superdirtTarget {oLatency = 0.05, oAddress = "127.0.0.1", oPort = 57120},
+                      [superdirtShape]
+                     )
+                    ]
+       tidal <- liftIO $ startStream (defaultConfig {cCtrlAddr = "0.0.0.0", cVerbose = True, cFrameTimespan = 1/20}) oscmap
+
        logFH <- liftIO openLog
        name <- liftIO $ lookupEnv "CIRCLE_NAME"
        number <- liftIO $ lookupEnv "CIRCLE_NUMBER"
@@ -994,8 +1016,8 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
-          where p' = p # orbit (pure o)
-          -- where p' = filt id $ p # orbit (pure o)
+          -- where p' = p # orbit (pure o)
+          where p' = filt id $ p # orbit (pure o)
         act _ _ (HintError err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps

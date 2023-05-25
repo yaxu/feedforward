@@ -34,25 +34,28 @@ hintJob (mIn, mOut) parameters =
                            execScripts (scripts parameters)
                            hintLoop
                      )
-               (\e -> return (Left $ UnknownError $ "exception" ++ show (e :: SomeException)))
-
+               (\e -> do hPutStrLn stderr $ "exception" ++ show (e :: SomeException)
+                         return (Left $ UnknownError $ "exception" ++ show (e :: SomeException))
+               )
+     hPutStrLn stderr $ "hmm: " ++ show result
      takeMVar mIn
      putMVar mOut (toResponse result)
      hintJob (mIn, mOut) parameters
      where hintLoop = do s <- liftIO (readMVar mIn)
                          let munged = deltaMini s
-                         -- liftIO $ hPutStrLn stderr $ "munged: " ++ munged
+                         liftIO $ hPutStrLn stderr $ "munged! " ++ munged
                          t <- Hint.typeChecksWithDetails munged
+                         liftIO $ hPutStrLn stderr $ "typechecked"
                          --interp check s
                          interp t munged
                          hintLoop
-           interp (Left errors) _ = do liftIO $ do putMVar mOut $ HintError $ "Didn't typecheck" ++ (concatMap show errors)
-                                                   hPutStrLn stderr $ "error: " ++ (concatMap show errors)
+           interp (Left errors) _ = do liftIO $ do hPutStrLn stderr $ "error: " ++ (concatMap show errors)
+                                                   putMVar mOut $ HintError $ "Didn't typecheck" ++ (concatMap show errors)
                                                    takeMVar mIn
                                        return ()
            interp (Right t) s =
              do
-                -- liftIO $ hPutStrLn stderr $ "Parsing: " ++ s
+                liftIO $ hPutStrLn stderr $ "Parsing: " ++ s
                 p <- try (Hint.interpret s (Hint.as :: ControlSignal)) :: Interpreter (Either InterpreterError ControlSignal)
                 case p of
                   Left exc -> liftIO $ do
