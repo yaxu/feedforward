@@ -1,8 +1,8 @@
 module Code where
 
-import           Sound.Tidal.Context     hiding (when)
-import           Data.Maybe              (fromJust, fromMaybe, isJust, mapMaybe)
-import           Data.List               ((\\))
+import           Data.List           ((\\))
+import           Data.Maybe          (fromJust, fromMaybe, isJust, mapMaybe)
+import           Sound.Tidal.Context hiding (when)
 
 type Tag = Int
 
@@ -11,7 +11,7 @@ data Status = Success | Error | Normal deriving (Show, Eq)
 data Block = Block {bTag      :: Tag,
                     bModified :: Bool,
                     bStatus   :: Status,
-                    bPattern  :: Maybe ControlPattern,
+                    bPattern  :: Maybe ControlSignal,
                     bMute     :: Bool,
                     bSolo     :: Bool
                    }
@@ -85,9 +85,9 @@ codeEvents t ls = loop 0 ls
         loop n ((Line {lBlock = Just (Block {bPattern = Just pat, bMute = False})}):ls)
           = (locs n pat) ++ (loop (n+1) ls)
         loop n (_:ls) = loop (n+1) ls
-        locs :: Int -> ControlPattern -> [(Int, Int, Int)]
+        locs :: Int -> ControlSignal -> [(Int, Int, Int)]
         locs n pat = concatMap (evToLocs n) $ queryArc pat (Arc t t)
-        evToLocs n (Event {context = Context xs}) = map (toLoc n) xs
+        evToLocs n (Event {metadata = Metadata xs}) = map (toLoc n) xs
         -- assume an event doesn't span a line..
         toLoc n ((bx, by), (ex, _)) = (n+by, bx, ex)
 

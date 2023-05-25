@@ -1,4 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Edit where
 
@@ -8,9 +9,12 @@ module Edit where
    Distributed under the terms of the GNU Public License 3.0, see LICENSE
 -}
 
-import           Control.Concurrent      (ThreadId, forkIO, threadDelay, killThread)
+import           Control.Concurrent      (ThreadId, forkIO, killThread,
+                                          threadDelay)
 import           Control.Concurrent.MVar
-import           Control.Monad           (filterM, foldM, forever, unless, when, join)
+import qualified Control.Exception       as E
+import           Control.Monad           (filterM, foldM, forever, join, unless,
+                                          when)
 import           Control.Monad.IO.Class
 import           Data.Char
 import           Data.List               (elemIndex, inits, intercalate,
@@ -28,7 +32,7 @@ import qualified Network.Socket          as N
 import qualified Network.WebSockets      as WS
 import           Sound.Osc.Fd            as O
 import qualified Sound.Osc.Time.Timeout  as O
-import           Sound.Tidal.Context     hiding (when, resolve)
+import           Sound.Tidal.Context     hiding (resolve, when)
 import           Sound.Tidal.Tempo       (timeToCycles)
 import           System.Directory
 import           System.Environment      (getArgs, lookupEnv)
@@ -37,9 +41,8 @@ import           System.IO
 import           System.Posix.Process
 import           System.Posix.Signals
 import           Text.Printf
+import           Text.Read               (readMaybe)
 import           UI.NCurses
-import           Text.Read (readMaybe)
-import qualified Control.Exception as E
 
 import qualified Data.Aeson              as A
 import           GHC.Generics
@@ -75,7 +78,7 @@ data FileChoice = FileChoice {fcPath  :: [FilePath],
                               fcFiles :: [FilePath]
                              }
 
-data EState = EState {sCode         :: Code,
+data EState = EState {sCode       :: Code,
                     sPos          :: Pos,
                     sXWarp        :: Int,
                     sEditWindow   :: Window,
@@ -123,7 +126,7 @@ feedforward params = do
     render
     mainLoop mvS
 
-sendTidal :: EState -> ControlPattern -> IO ()
+sendTidal :: EState -> ControlSignal -> IO ()
 sendTidal s pat = do let pat' = if isJust (sNumber s)
                                 then pat |+ n (pure $ fromIntegral $ fromJust (sNumber s))
                                 else pat
@@ -672,8 +675,8 @@ mainLoop mvS = loop where
   loop = do s <- liftIO (readMVar mvS)
 
             case sMode s of
-             EditMode     -> drawEditor mvS
-             FileMode     -> drawDirs mvS
+             EditMode       -> drawEditor mvS
+             FileMode       -> drawDirs mvS
              PlaybackMode _ -> drawEditor mvS
             render
 
@@ -746,7 +749,7 @@ keyCtrl mvS 'l' = liftIO $ modifyMVar_ mvS $ \s -> return $ s {sRefresh = True}
 
 keyCtrl mvS '.' = stopAll mvS
 
-keyCtrl mvS _ = return ()
+keyCtrl mvS _   = return ()
 
 keyAlt mvS '\n' = eval mvS
 keyAlt mvS 'h' = stopAll mvS
@@ -974,7 +977,7 @@ drawDirs mvS
                                drawString dir
                                setAttribute AttributeReverse False
 
-evalBlock :: (EState, [ControlPattern]) -> (Int, Code) -> IO (EState, [ControlPattern])
+evalBlock :: (EState, [ControlSignal]) -> (Int, Code) -> IO (EState, [ControlSignal])
 evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                                   id = fromJust $ lTag $ head ls
                               liftIO $ putMVar (sHintIn s) code

@@ -1,19 +1,19 @@
 module TidalHint where
 
 import           Control.Concurrent.MVar
-import           Control.Exception (IOException, SomeException)
+import           Control.Exception            (IOException, SomeException)
 import           Control.Monad
 import           Control.Monad.Catch
-import           Data.List (intercalate,isPrefixOf)
+import           Data.List                    (intercalate, isPrefixOf)
 import           Language.Haskell.Interpreter as Hint
 import           Sound.Tidal.Context
+import           Sound.Tidal.Utils
 import           System.IO
 import           System.Posix.Signals
-import           Sound.Tidal.Utils
 
 import           Parameters
 
-data Response = HintOK {parsed :: ControlPattern}
+data Response = HintOK {parsed :: ControlSignal}
               | HintError {errorMessage :: String}
 
 instance Show Response where
@@ -53,7 +53,7 @@ hintJob (mIn, mOut) parameters =
                                        return ()
            interp (Right t) s =
              do
-                p <- try (Hint.interpret s (Hint.as :: ControlPattern)) :: Interpreter (Either InterpreterError ControlPattern)
+                p <- try (Hint.interpret s (Hint.as :: ControlSignal)) :: Interpreter (Either InterpreterError ControlSignal)
                 case p of
                   Left exc -> liftIO $ do
                     hPutStrLn stderr $ parseError exc
@@ -78,9 +78,9 @@ execScripts paths = do
           Left exc -> liftIO $ hPutStrLn stderr $ parseError exc
           Right () -> return ()
 
-toResponse :: Either InterpreterError ControlPattern -> Response
+toResponse :: Either InterpreterError ControlSignal -> Response
 toResponse (Left err) = HintError (parseError err)
-toResponse (Right p) = HintOK p
+toResponse (Right p)  = HintOK p
 
 parseError :: InterpreterError -> String
 parseError (UnknownError s) = "Unknown error: " ++ s
