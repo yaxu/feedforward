@@ -64,7 +64,8 @@ data Playback = Playback {pbOffset  :: Double,
 
 channels = 2
 
-latency = 0
+-- Increase to make the animation happen earlier..
+latency = 0.1
 
 dirt = Super
 
@@ -237,7 +238,9 @@ drawEditor mvS
        -- tempo <- liftIO $ readMVar $ sTempoMV $ sTidal s
        -- t <- liftIO time
        -- let c = timeToCycles tempo (t-latency)
-       c <- (toRational) <$> (liftIO $ streamGetnow (sTidal s))
+       cps <- (liftIO $ streamGetcps (sTidal s))
+       let latencyCycles = latency * cps
+       c <- (toRational . (+ latencyCycles)) <$> (liftIO $ streamGetnow (sTidal s))
        events <- liftIO $ E.catch (do let evs = codeEvents c $ sCode s
                                       hPutStrLn stderr $ show $ length evs
                                       return evs
@@ -306,7 +309,7 @@ drawEditor mvS
         drawRMS s w y l | hasBlock l = do let rmsMax = (length rmsBlocks) - 1
                                               id = fromJust $ lTag l
                                               str = map (\n -> rmsBlocks !! (rmsn n)) [0 .. channels-1]
-                                              rmsn n = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*channels+n))
+                                              rmsn n = min rmsMax $ floor $ 50 * ((sRMS s) !! (id*channels+n-1))
                                           setColor (sColour s)
                                           moveCursor (fromIntegral y + topMargin - 1) 0
                                           drawString $ str
@@ -391,9 +394,9 @@ initEState parameters
        tempoIp <- liftIO $ fromMaybe "127.0.0.1" <$> lookupEnv "TEMPO_IP"
 
        let spattarget = Target {oName = "spat",
-                                oAddress = "192.168.1.90",
-                                oPort = 2222,
-                                oLatency = 0.05,
+                                oAddress = "192.168.1.208",
+                                oPort = 33333,
+                                oLatency = (0.12),
                                 oWindow = Nothing,
                                 oSchedule = Live,
                                 oHandshake = False,
@@ -404,12 +407,12 @@ initEState parameters
                           OSC "/source/{sorbit}/xyz"   $ ArgList [("x", Nothing), ("y", Nothing), ("z", Nothing)],
                           OSC "/source/{sorbit}/spread"   $ ArgList [("spread", Nothing)],
                           OSC "/source/{sorbit}/doppler"   $ ArgList [("doppler", Nothing)],
-                          OSC "/source/{sorbit}/pres"   $ ArgList [("pres", Nothing)],
-                          OSC "/room/{sorbit}/heaviness" $ ArgList [("heaviness", Nothing)],
+                          OSC "/source/{sorbit}/pres"   $ ArgList [("pres", Nothing)], --
+                          OSC "/room/{sorbit}/heaviness" $ ArgList [("heaviness", Nothing)], --
                           OSC "/source/{sorbit}/yaw"   $ ArgList [("yaw", Nothing)]
                          ]
-           oscmap = [(spattarget, spatformats),
-                     (superdirtTarget {oLatency = 0.05, oAddress = "127.0.0.1", oPort = 57120},
+           oscmap = [-- (spattarget, spatformats),
+                     (superdirtTarget {oLatency = (0), oAddress = "127.0.0.1", oPort = 57120},
                       [superdirtShape]
                      )
                     ]
@@ -1016,12 +1019,25 @@ evalBlock (s,ps) (n, ls) = do let code = intercalate "\n" (map lText ls)
                               -- hPutStrLn stderr $ show $ sCode s'
                               return (s', ps')
   where act id o (HintOK p) b = (b {bStatus = Success, bModified = False, bPattern = Just p'}, p':ps)
-          -- where p' = p # orbit (pure o)
-          where p' = filt id $ p # orbit (pure o)
+          where p' = p # orbit (pure o)
+          -- where p' = filt id $ p |+ orbit (pure (o-1)) |+ pI "sorbit" (pure (o)) |+ pF "a" 0 |+ pF "e" 0 |+ pF "d" 1
         act _ _ (HintError err) b = (b {bStatus = Error}, ps')
           where ps' | isJust $ bPattern b = (fromJust $ bPattern b):ps
                     | otherwise = ps
-        filt i = selectF (cF 0 (show $ 50 + i)) [id, (# (delayfb (cF 0 (show $ 30 + i)) # delayt (select (cF 0 (show $ 70+i)) [1/3, 1/6]) # lock 1 # delay (cF 0 (show $ 20 + i))))] . selectF (cF 0 (show $ 90 + i)) [id, (# (room (cF 0 (show $ 40 + i)) # sz 0.8))] . selectF (cF 0 (show $ 80 + i)) [id, (# djf (cF 0 (show $ 40 + i)))]
+        filt i = selectF (cF 0 (show $ 50 + i)) [id
+                                                 ,
+                                                  (|+ (pF "d" (range (-0.5) 1 $ cF 0 (show $ 20 + i))))
+                                                 -- (# (delayfb (cF 0 (show $ 30 + i))
+                                                 --     # delayt (select (cF 0 (show $ 70+i)) [1/3, 1/6])
+                                                 --     # lock 1 # delay (cF 0 (show $ 20 + i))
+                                                 --    )
+                                                 -- )
+                                                ]
+                 . selectF (cF 0 (show $ 90 + i)) [id,
+                                                   -- (# (room (cF 0 (show $ 40 + i)) # sz 0.8))
+                                                   (|+ (pF "e" (range 0 180 $ cF 0 (show $ 40 + i))))
+                                                  ]
+                 . selectF (cF 0 (show $ 80 + i)) [id, (|+ pF "a" (range 0 360 $ cF 0 (show $ 40 + i)))]
 {-
 filt id = (|* (lpf (rangex 100 10000 $ min 1 <$> 2 * cF 0 ctrl)
                        |* hpf (range 0 4000 $ max 0 <$> ((2 * cF 0 ctrl) - 1))
