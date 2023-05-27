@@ -24,7 +24,7 @@ executable feedforward
     , network
     , optparse-applicative
     , text
-    , tidal >= 1.7.2
+    , tidal >= 2.0.0
     , time
     , unix
     , websockets
